@@ -1,0 +1,1918 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#FFFFFF">
+<title>GestorPro</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<style>
+/* ============================================================
+   GestorPro — clean design tokens
+   Conceito: ferramenta de trabalho discreta. Hierarquia vem de
+   tipografia, espaço e peso — não de cor. Um único acento (índigo)
+   carrega toda ação primária; estado (ok/warn/bad/info) é sutil,
+   texto colorido sobre fundo neutro, nunca blocos vibrantes.
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root{
+  --bg:#FFFFFF;
+  --bg-soft:#FBF6F7;
+  --surface:#FFFFFF;
+  --line:#F0E2E5;
+  --line-strong:#E5CFD5;
+
+  --text:#241A1D;
+  --text2:#7A6A6E;
+  --text3:#B5A1A6;
+
+  --accent:#E8779B;
+  --accent-soft:#FCEAF0;
+  --accent-strong:#D85C84;
+
+  --ok:#177350;
+  --ok-soft:#E7F5EE;
+  --warn:#9A5B00;
+  --warn-soft:#FBF0DD;
+  --bad:#B42334;
+  --bad-soft:#FBEAEA;
+  --info:#1D5FAE;
+  --info-soft:#EAF2FB;
+
+  --r-sm:8px;--r-md:10px;--r-lg:14px;--r-xl:16px;
+  --font-display:'Inter',system-ui,sans-serif;
+  --font-mono:'IBM Plex Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{background:var(--bg);}
+body{
+  font-family:var(--font-display);color:var(--text);min-height:100dvh;
+  overflow-x:hidden;font-size:14.5px;line-height:1.5;-webkit-font-smoothing:antialiased;
+}
+#app{display:flex;flex-direction:column;min-height:100dvh;}
+
+/* ---------- HEADER ---------- */
+.topbar{
+  position:sticky;top:0;z-index:90;background:rgba(255,255,255,0.96);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--line);
+  padding:14px 18px 0;
+}
+.topbar-row{display:flex;align-items:center;gap:10px;padding-bottom:13px;}
+.brand{display:flex;align-items:center;gap:9px;flex:1;min-width:0;}
+.brand-mark{
+  width:28px;height:28px;border-radius:7px;flex-shrink:0;
+  background:var(--accent);
+  display:flex;align-items:center;justify-content:center;
+  font-weight:700;font-size:13px;color:#fff;
+}
+.brand-text{display:flex;flex-direction:column;gap:0px;min-width:0;}
+.brand-greet{font-size:10.5px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;}
+.brand-date{font-size:14px;font-weight:600;color:var(--text);text-transform:capitalize;}
+.topclock{
+  font-family:var(--font-mono);font-size:13.5px;font-weight:500;color:var(--text2);
+  flex-shrink:0;
+}
+.toptabs{display:flex;gap:2px;overflow-x:auto;padding-bottom:0;}
+.toptabs::-webkit-scrollbar{display:none;}
+.toptab{
+  flex-shrink:0;font-family:var(--font-display);font-size:13px;font-weight:500;
+  color:var(--text2);background:transparent;border:none;padding:9px 12px;
+  cursor:pointer;white-space:nowrap;position:relative;
+}
+.toptab.active{color:var(--text);font-weight:600;}
+.toptab.active::after{content:'';position:absolute;left:12px;right:12px;bottom:0;height:2px;background:var(--accent);border-radius:1px;}
+
+/* ---------- MAIN ---------- */
+.main{flex:1;padding:20px 16px 100px;max-width:640px;margin:0 auto;width:100%;}
+.view{display:none;}
+.view.active{display:block;}
+
+.eyebrow{font-size:11.5px;font-weight:600;letter-spacing:.04em;color:var(--text3);text-transform:uppercase;margin-bottom:6px;}
+.view-title{font-size:21px;font-weight:700;letter-spacing:-.01em;margin-bottom:3px;color:var(--text);}
+.view-sub{font-size:13px;color:var(--text2);margin-bottom:20px;}
+
+/* ---------- PANEL / CARD ---------- */
+.panel{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:16px;margin-bottom:12px;
+}
+.panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:13px;}
+.panel-title{font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:6px;color:var(--text);}
+.panel-note{font-size:11.5px;color:var(--text3);margin-top:2px;font-weight:400;}
+
+/* ---------- BUTTONS ---------- */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  font-family:var(--font-display);font-weight:600;font-size:13px;
+  border:none;border-radius:var(--r-sm);padding:9px 14px;cursor:pointer;
+  transition:opacity .12s,background-color .12s;
+}
+.btn:active{opacity:.75;}
+.btn-primary{background:var(--accent);color:#fff;}
+.btn-primary:hover{background:var(--accent-strong);}
+.btn-danger{background:var(--bad);color:#fff;}
+.btn-soft{background:var(--accent-soft);color:var(--accent);}
+.btn-ghost{background:var(--bg-soft);color:var(--text2);border:1px solid var(--line);}
+.btn-line{background:transparent;color:var(--text2);border:1px solid var(--line);}
+.btn-sm{padding:6px 11px;font-size:12px;border-radius:7px;}
+.btn-xs{padding:4px 9px;font-size:11.5px;border-radius:6px;}
+.btn-block{width:100%;}
+.btn-icon{width:32px;height:32px;padding:0;border-radius:8px;flex-shrink:0;}
+.fab{
+  position:fixed;right:18px;bottom:96px;z-index:80;
+  width:50px;height:50px;border-radius:50%;background:var(--accent);
+  color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:600;
+  border:none;cursor:pointer;box-shadow:0 4px 16px rgba(232,119,155,.35);
+}
+.fab:active{opacity:.85;}
+
+/* ---------- BOTTOM NAV ---------- */
+.bottomnav{
+  position:fixed;bottom:0;left:0;right:0;z-index:90;
+  background:rgba(255,255,255,0.97);backdrop-filter:blur(14px);
+  border-top:1px solid var(--line);
+  display:flex;justify-content:space-around;
+  padding:7px 4px env(safe-area-inset-bottom,7px);
+}
+.navbtn{
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  background:none;border:none;color:var(--text3);cursor:pointer;
+  padding:5px 4px;min-width:52px;font-family:var(--font-display);position:relative;
+}
+.navbtn.active{color:var(--text);}
+.navbtn-ic{font-size:17px;line-height:1;opacity:.75;}
+.navbtn.active .navbtn-ic{opacity:1;}
+.navbtn-lb{font-size:9.5px;font-weight:600;letter-spacing:.02em;}
+.navbtn-dot{position:absolute;top:0;right:8px;width:6px;height:6px;border-radius:50%;background:var(--bad);}
+
+/* ---------- INPUTS ---------- */
+.field{margin-bottom:13px;}
+.flabel{font-size:11px;font-weight:600;color:var(--text2);letter-spacing:.01em;margin-bottom:6px;display:block;}
+.finput,.fselect,.ftext{
+  width:100%;padding:10px 12px;background:var(--bg-soft);border:1px solid var(--line);
+  border-radius:var(--r-sm);color:var(--text);font-family:var(--font-display);font-size:14px;
+  outline:none;transition:border-color .15s;-webkit-appearance:none;
+}
+.finput:focus,.fselect:focus,.ftext:focus{border-color:var(--accent);background:var(--surface);}
+.ftext{resize:vertical;min-height:74px;line-height:1.5;}
+.fselect{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236B6B76' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center;padding-right:32px;cursor:pointer;
+}
+.finput[type=time],.finput[type=date]{font-family:var(--font-mono);}
+.fgrid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+
+/* ---------- CHIPS / TABS ---------- */
+.chiprow{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;}
+.chip{
+  font-family:var(--font-display);padding:5px 12px;border-radius:6px;font-size:12px;font-weight:500;
+  background:var(--bg-soft);color:var(--text2);border:1px solid var(--line);cursor:pointer;
+}
+.chip.sel{background:var(--accent);color:#fff;border-color:var(--accent);}
+.segtabs{display:flex;gap:4px;margin-bottom:14px;overflow-x:auto;background:var(--bg-soft);padding:3px;border-radius:9px;}
+.segtabs::-webkit-scrollbar{display:none;}
+.segtab{
+  flex-shrink:0;font-family:var(--font-display);padding:6px 13px;border-radius:7px;font-size:12px;font-weight:600;
+  background:transparent;color:var(--text2);border:none;cursor:pointer;
+}
+.segtab.active{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.08);}
+
+/* ---------- BADGES / PILLS ---------- */
+.pill{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:5px;font-size:10.5px;font-weight:600;}
+.pill-ok{background:var(--ok-soft);color:var(--ok);}
+.pill-bad{background:var(--bad-soft);color:var(--bad);}
+.pill-warn{background:var(--warn-soft);color:var(--warn);}
+.pill-info{background:var(--info-soft);color:var(--info);}
+.pill-flat{background:var(--bg-soft);color:var(--text3);border:1px solid var(--line);}
+
+/* ---------- STAT GRID ---------- */
+.statgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:13px;}
+.statcell{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:13px 14px;}
+.statval{font-family:var(--font-mono);font-size:22px;font-weight:500;letter-spacing:-.01em;color:var(--text);}
+.statlb{font-size:10.5px;color:var(--text3);margin-top:3px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
+
+/* ---------- ROSTER ROW ---------- */
+.roster{display:flex;flex-direction:column;gap:1px;border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;}
+.rrow{
+  display:flex;align-items:center;gap:11px;background:var(--surface);
+  padding:11px 12px;position:relative;border-bottom:1px solid var(--line);
+}
+.rrow:last-child{border-bottom:none;}
+.rrow.on{background:var(--ok-soft);}
+.rrow.ot{background:var(--warn-soft);}
+.rrow.off{opacity:.7;}
+.ravatar{
+  width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:700;flex-shrink:0;font-family:var(--font-display);
+}
+.rinfo{flex:1;min-width:0;}
+.rname{font-size:13.5px;font-weight:600;color:var(--text);}
+.rmeta{font-size:11.5px;color:var(--text2);margin-top:1px;}
+.ractions{display:flex;gap:5px;flex-shrink:0;}
+
+/* ---------- TEAM CARD ---------- */
+.teamcard{
+  display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r-lg);padding:13px;margin-bottom:8px;cursor:pointer;
+}
+.teamcard:active{background:var(--bg-soft);}
+.tc-status{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+
+/* ---------- LEVEL COLORS ---------- */
+.lvl-treinamento{color:var(--accent);background:var(--accent-soft);}
+.lvl-teste{color:var(--text2);background:var(--bg-soft);border:1px solid var(--line);}
+.lvl-junior{color:var(--info);background:var(--info-soft);}
+.lvl-pleno{color:var(--warn);background:var(--warn-soft);}
+.lvl-senior{color:var(--ok);background:var(--ok-soft);}
+
+/* ---------- TASK / CHECK LIST ---------- */
+.tasklist{display:flex;flex-direction:column;gap:1px;border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;}
+.taskrow{
+  display:flex;align-items:flex-start;gap:11px;background:var(--surface);
+  padding:12px;border-bottom:1px solid var(--line);
+}
+.taskrow:last-child{border-bottom:none;}
+.taskrow.done{opacity:.5;}
+.tcheck{
+  width:19px;height:19px;border-radius:5px;border:1.5px solid var(--line-strong);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;background:var(--surface);
+  font-weight:700;transition:all .15s;margin-top:1px;
+}
+.tcheck.done{background:var(--accent);border-color:var(--accent);color:#fff;}
+.tbody{flex:1;min-width:0;}
+.ttext{font-size:13.5px;font-weight:500;color:var(--text);}
+.taskrow.done .ttext{text-decoration:line-through;color:var(--text3);}
+.tmeta-row{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;}
+
+/* ---------- ORIENT / LOG ITEM ---------- */
+.logitem{
+  background:var(--bg-soft);border-left:2px solid var(--accent);border-radius:0 var(--r-sm) var(--r-sm) 0;
+  padding:10px 12px;margin-bottom:8px;
+}
+.logitem.alt{border-left-color:var(--warn);}
+.logdate{font-size:10.5px;color:var(--text3);margin-bottom:5px;font-weight:600;}
+.logtext{font-size:13px;color:var(--text2);line-height:1.55;}
+
+/* ---------- EMPTY STATE ---------- */
+.empty{text-align:center;padding:34px 16px;color:var(--text3);}
+.empty-ic{font-size:26px;margin-bottom:9px;opacity:.5;}
+.empty-tx{font-size:12.5px;line-height:1.6;}
+
+/* ---------- ALARM HERO ---------- */
+.alarmhero{text-align:center;padding:6px 0 4px;}
+.alarmclock{font-family:var(--font-mono);font-size:32px;font-weight:500;letter-spacing:-.01em;color:var(--text);}
+.alarmclock.ringing{animation:ring-text .6s infinite alternate;}
+@keyframes ring-text{from{opacity:1}to{opacity:.4}}
+.alarmsub{font-size:12px;color:var(--text3);margin-top:5px;font-weight:500;}
+.alarm-ringicon{
+  width:46px;height:46px;border-radius:50%;background:var(--bg-soft);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font-size:19px;margin:0 auto 11px;
+}
+.alarm-ringicon.ringing{animation:ring-shake .4s infinite;background:var(--bad-soft);border-color:var(--bad);}
+@keyframes ring-shake{0%,100%{transform:rotate(0)}25%{transform:rotate(-8deg)}75%{transform:rotate(8deg)}}
+.codebox{
+  background:var(--accent);border-radius:var(--r-md);
+  padding:13px 18px;text-align:center;font-family:var(--font-mono);font-size:24px;font-weight:500;
+  color:#fff;letter-spacing:6px;margin:11px 0;
+}
+
+/* ---------- WEEK GOALS ---------- */
+.goalcard{
+  background:var(--bg-soft);border:1px solid var(--line);border-radius:var(--r-md);
+  padding:13px;margin-bottom:9px;
+}
+.goalcard.met{border-color:var(--ok);background:var(--ok-soft);}
+.goal-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px;}
+.goal-text{font-size:13.5px;font-weight:600;flex:1;color:var(--text);}
+.goalbar-track{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:8px;}
+.goalbar-fill{height:100%;border-radius:3px;background:var(--accent);transition:width .4s;}
+.goal-nums{display:flex;justify-content:space-between;margin-top:6px;font-family:var(--font-mono);font-size:11px;color:var(--text2);}
+
+/* ---------- BAR CHART ---------- */
+.barchart{display:flex;align-items:flex-end;gap:5px;height:54px;margin:12px 0 6px;}
+.barcol{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;}
+.barfill{width:100%;border-radius:3px 3px 1px 1px;min-height:3px;background:var(--text2);transition:height .4s;}
+.barlb{font-size:9px;color:var(--text3);font-weight:600;}
+
+/* ---------- REVENUE TABLE ---------- */
+.rtable{width:100%;border-collapse:collapse;font-size:12px;}
+.rtable th{text-align:left;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.03em;padding:6px 5px;border-bottom:1px solid var(--line);}
+.rtable td{padding:8px 5px;border-bottom:1px solid var(--line);vertical-align:middle;}
+.rtable tr:last-child td{border-bottom:none;}
+.rinput{width:76px;padding:6px 7px;font-family:var(--font-mono);font-size:12px;text-align:right;background:var(--bg-soft);border:1px solid var(--line);border-radius:6px;color:var(--text);outline:none;}
+.rinput:focus{border-color:var(--accent);}
+.rtotalrow td{font-weight:700;color:var(--text);font-family:var(--font-mono);}
+
+/* ---------- REPORT ROW ---------- */
+.reprow{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);}
+.reprow:last-child{border-bottom:none;}
+.replb{font-size:12.5px;color:var(--text2);}
+.repval{font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--text);}
+.divider{height:1px;background:var(--line);margin:13px 0;}
+.sectionlb{font-size:10.5px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;}
+
+/* ---------- MODAL ---------- */
+.modalbg{
+  display:none;position:fixed;inset:0;z-index:200;background:rgba(22,22,26,.35);
+  align-items:flex-end;justify-content:center;
+}
+.modalbg.open{display:flex;}
+.modal{
+  background:var(--surface);border-top-left-radius:18px;border-top-right-radius:18px;
+  border:1px solid var(--line);width:100%;max-width:600px;padding:18px 16px;
+  max-height:92dvh;overflow-y:auto;
+}
+.modal-handle{width:34px;height:4px;background:var(--line-strong);border-radius:2px;margin:0 auto 16px;}
+.modal-title{font-size:16px;font-weight:700;margin-bottom:15px;letter-spacing:-.01em;color:var(--text);}
+.modalbtns{display:flex;gap:8px;margin-top:8px;}
+
+/* ---------- TOAST ---------- */
+.toast{
+  position:fixed;bottom:92px;left:50%;transform:translateX(-50%) translateY(12px);
+  background:var(--text);color:#fff;
+  padding:10px 16px;border-radius:8px;font-size:13px;font-weight:500;z-index:300;
+  opacity:0;transition:all .25s;pointer-events:none;white-space:nowrap;
+  box-shadow:0 4px 16px rgba(0,0,0,.2);font-family:var(--font-display);
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* ---------- WATCH BANNER ---------- */
+.watchbanner{
+  background:var(--bad-soft);border:1px solid rgba(180,35,52,.2);border-radius:var(--r-lg);padding:14px;margin-bottom:13px;
+}
+.watchitem{display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid rgba(180,35,52,.12);}
+.watchitem:last-child{border-bottom:none;}
+
+::-webkit-scrollbar{width:0;height:0;}
+</style>
+</head>
+<body>
+<div id="app">
+
+<header class="topbar">
+  <div class="topbar-row">
+    <div class="brand">
+      <div class="brand-mark">G</div>
+      <div class="brand-text">
+        <span class="brand-greet">Gestão da equipe</span>
+        <span class="brand-date" id="hd-date">—</span>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <span class="pill pill-flat" id="sync-badge" style="font-size:9.5px">conectando…</span>
+      <div class="topclock" id="hd-clock">00:00</div>
+    </div>
+  </div>
+  <nav class="toptabs" id="toptabs">
+    <button class="toptab active" data-go="home">Painel</button>
+    <button class="toptab" data-go="turno">Turno</button>
+    <button class="toptab" data-go="agenda">Agenda</button>
+    <button class="toptab" data-go="semana">Semana</button>
+    <button class="toptab" data-go="time">Equipe</button>
+    <button class="toptab" data-go="fat">Faturamento</button>
+  </nav>
+</header>
+
+<main class="main">
+
+<!-- ===================== PAINEL (HOME) ===================== -->
+<section class="view active" id="v-home">
+  <div class="eyebrow">status ao vivo</div>
+  <div class="view-title">Painel</div>
+  <div class="view-sub">Visão geral da operação agora.</div>
+
+  <div class="statgrid">
+    <div class="statcell"><div class="statval" id="s-online">0</div><div class="statlb">Online agora</div></div>
+    <div class="statcell"><div class="statval" id="s-rev">R$0</div><div class="statlb">Faturado hoje</div></div>
+    <div class="statcell"><div class="statval" id="s-ot">0</div><div class="statlb">Em hora extra</div></div>
+    <div class="statcell"><div class="statval" id="s-abs">0</div><div class="statlb">Ocorrências/sem.</div></div>
+  </div>
+
+  <div id="home-watch-wrap"></div>
+
+  <div class="panel">
+    <div class="panel-head"><div><div class="panel-title">Próxima troca de turno</div></div></div>
+    <div class="alarmhero">
+      <div class="alarmclock" id="home-countdown">--:--:--</div>
+      <div class="alarmsub" id="home-next-lb">calculando…</div>
+    </div>
+    <div id="home-codebox" class="codebox" style="display:none"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">Quem está online</div>
+      <button class="btn btn-soft btn-xs" data-go="turno">gerenciar</button>
+    </div>
+    <div id="home-roster"></div>
+  </div>
+
+  <div class="panel" id="home-midnight-panel" style="display:none">
+    <div class="panel-head">
+      <div class="panel-title">Relatórios das 00h</div>
+      <button class="btn btn-soft btn-xs" data-go="agenda">ver tudo</button>
+    </div>
+    <div id="home-midnight-preview"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">Nota rápida</div></div>
+    <textarea class="ftext" id="quicknote" placeholder="Anotação rápida do turno..." style="min-height:56px"></textarea>
+    <button class="btn btn-primary btn-sm" style="margin-top:9px" onclick="saveQuickNote()">Salvar nota</button>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><div><div class="panel-title">💾 Backup dos dados</div><div class="panel-note">Exporte sempre antes de atualizar o app, para não perder o que já cadastrou</div></div></div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <button class="btn btn-soft btn-sm" style="flex:1" onclick="exportBackup()">Exportar backup</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1" onclick="triggerImportInput()">Importar arquivo</button>
+    </div>
+    <button class="btn btn-line btn-sm btn-block" onclick="openModal('m-backup-import')">Importar colando texto</button>
+    <input type="file" id="backup-file-input" accept=".json" style="display:none" onchange="importBackup(this.files[0])">
+  </div>
+</section>
+
+<!-- ===================== TURNO ===================== -->
+<section class="view" id="v-turno">
+  <div class="eyebrow">controle de turno</div>
+  <div class="view-title">Entradas & saídas</div>
+  <div class="view-sub" id="turno-sub">—</div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">Alarme de troca</div>
+      <span class="pill pill-warn" id="alarm-badge">0 horários</span>
+    </div>
+    <div id="alarm-times" style="margin-bottom:10px"></div>
+    <div class="alarmhero">
+      <div class="alarm-ringicon" id="turno-ring">⏰</div>
+      <div class="alarmclock" id="turno-countdown" style="font-size:27px">--:--:--</div>
+      <div class="alarmsub" id="turno-next-lb">para próxima troca</div>
+    </div>
+    <div id="turno-codebox" class="codebox" style="display:none"></div>
+    <button class="btn btn-line btn-block btn-sm" onclick="generateCode()">Gerar código manualmente</button>
+    <div class="divider"></div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5">
+      O alarme acima só funciona com o app aberto. Para receber notificação real no celular mesmo com o app fechado, exporte os horários para o seu calendário (iPhone, Google etc).
+    </div>
+    <button class="btn btn-soft btn-block btn-sm" onclick="exportCalendar()">📅 Exportar horários para calendário (.ics)</button>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">Painel ao vivo</div></div>
+      <button class="btn btn-soft btn-xs" onclick="openModal('m-overtime')">+ hora extra</button>
+    </div>
+    <div id="turno-board"></div>
+    <div class="divider"></div>
+    <button class="btn btn-ghost btn-block btn-sm" onclick="openModal('m-shift')">+ escalar chatter</button>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">Escala semanal</div></div>
+    <div class="segtabs" id="day-tabs">
+      <button class="segtab active" data-day="seg">Seg</button>
+      <button class="segtab" data-day="ter">Ter</button>
+      <button class="segtab" data-day="qua">Qua</button>
+      <button class="segtab" data-day="qui">Qui</button>
+      <button class="segtab" data-day="sex">Sex</button>
+      <button class="segtab" data-day="sab">Sáb</button>
+      <button class="segtab" data-day="dom">Dom</button>
+    </div>
+    <div id="schedule-list"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">Presenças</div>
+      <button class="btn btn-ghost btn-xs" onclick="openModal('m-absence')">+ falta/atraso</button>
+    </div>
+    <div id="absence-list"></div>
+  </div>
+</section>
+
+<!-- ===================== AGENDA ===================== -->
+<section class="view" id="v-agenda">
+  <div class="eyebrow">rotina & tarefas</div>
+  <div class="view-title">Agenda do dia</div>
+  <div class="view-sub">Tarefas, orientações e relatórios de fechamento.</div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">Tarefas de hoje</div><div class="panel-note">Sua checklist geral, não vinculada a chatter</div></div>
+      <button class="btn btn-primary btn-xs" onclick="openModal('m-task')">+ tarefa</button>
+    </div>
+    <div id="daily-tasks-list"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">Relatórios das 00h</div><div class="panel-note">Confirme após enviar no Discord</div></div>
+      <span class="pill pill-warn" id="midnight-badge">0 pendentes</span>
+    </div>
+    <div id="midnight-list"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">Orientações</div><div class="panel-note">Follow-up automático do dia anterior</div></div>
+      <button class="btn btn-ghost btn-xs" onclick="openModal('m-orient')">+ nova</button>
+    </div>
+    <div id="orient-list"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">Rotina de estudos</div>
+    <button class="btn btn-ghost btn-xs" onclick="openModal('m-study')">+ item</button></div>
+    <div id="study-list"></div>
+  </div>
+</section>
+
+<!-- ===================== SEMANA ===================== -->
+<section class="view" id="v-semana">
+  <div class="eyebrow">planejamento</div>
+  <div class="view-title">Semana <span id="semana-range" style="color:var(--text3);font-weight:400;font-size:15px"></span></div>
+  <div class="view-sub">Objetivos e metas gerais da equipe para esta semana.</div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">Objetivos da semana</div><div class="panel-note">Metas gerais do time — atualize o progresso conforme avança</div></div>
+      <button class="btn btn-primary btn-xs" onclick="openModal('m-goal')">+ objetivo</button>
+    </div>
+    <div id="goals-list"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">Notas de planejamento</div></div>
+    <textarea class="ftext" id="week-notes" placeholder="Prioridades, riscos, observações da semana..." style="min-height:88px"></textarea>
+    <button class="btn btn-primary btn-sm" style="margin-top:9px" onclick="saveWeekNotes()">Salvar</button>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">Faturamento da semana</div></div>
+    <div id="semana-revenue-preview"></div>
+  </div>
+</section>
+
+<!-- ===================== EQUIPE ===================== -->
+<section class="view" id="v-time">
+  <div class="eyebrow">roster</div>
+  <div class="view-title">Minha equipe</div>
+  <div class="view-sub">Perfis, níveis e mapeamento individual.</div>
+
+  <div class="segtabs" id="team-filter-tabs">
+    <button class="segtab active" data-lvl="all">Todos</button>
+    <button class="segtab" data-lvl="treinamento">Treino</button>
+    <button class="segtab" data-lvl="teste">Teste</button>
+    <button class="segtab" data-lvl="junior">Júnior</button>
+    <button class="segtab" data-lvl="pleno">Pleno</button>
+    <button class="segtab" data-lvl="senior">Sênior</button>
+  </div>
+  <div id="team-list"></div>
+  <button class="fab" onclick="openModal('m-chatter')">+</button>
+</section>
+
+<!-- ===================== FATURAMENTO ===================== -->
+<section class="view" id="v-fat">
+  <div class="eyebrow">financeiro</div>
+  <div class="view-title">Faturamento</div>
+  <div class="view-sub">Lançamento diário por modelo e relatórios.</div>
+
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">Modelos</div>
+    <button class="btn btn-ghost btn-xs" onclick="openModal('m-model')">+ modelo</button></div>
+    <div id="models-list"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">Lançamento de hoje</div><div class="panel-note" id="fat-date-lb">—</div></div>
+      <button class="btn btn-ghost btn-xs" onclick="openModal('m-revreport')">relatório</button>
+    </div>
+    <div id="revenue-table"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">Relatórios</div></div>
+    <div class="segtabs">
+      <button class="segtab active" data-rep="week">Semana</button>
+      <button class="segtab" data-rep="month">Mês</button>
+    </div>
+    <div id="report-body"></div>
+  </div>
+</section>
+
+</main>
+
+<nav class="bottomnav" id="bottomnav">
+  <button class="navbtn active" data-go="home"><span class="navbtn-ic">⌂</span><span class="navbtn-lb">Painel</span></button>
+  <button class="navbtn" data-go="turno"><span class="navbtn-ic">⇄</span><span class="navbtn-lb">Turno</span><span class="navbtn-dot" id="nav-dot-turno" style="display:none"></span></button>
+  <button class="navbtn" data-go="agenda"><span class="navbtn-ic">▤</span><span class="navbtn-lb">Agenda</span><span class="navbtn-dot" id="nav-dot-agenda" style="display:none"></span></button>
+  <button class="navbtn" data-go="semana"><span class="navbtn-ic">◎</span><span class="navbtn-lb">Semana</span></button>
+  <button class="navbtn" data-go="time"><span class="navbtn-ic">▦</span><span class="navbtn-lb">Equipe</span></button>
+  <button class="navbtn" data-go="fat"><span class="navbtn-ic">¤</span><span class="navbtn-lb">Fat.</span></button>
+</nav>
+</div>
+
+<!-- ===================================================== MODALS ===================================================== -->
+
+<div class="modalbg" id="m-model"><div class="modal">
+  <div class="modal-handle"></div><div class="modal-title">Novo modelo</div>
+  <div class="field"><label class="flabel">Nome</label><input class="finput" id="model-name" placeholder="Ex: Luna, Bella..."></div>
+  <div class="field"><label class="flabel">Emoji</label><input class="finput" id="model-emoji" placeholder="🌟" maxlength="4"></div>
+  <div class="modalbtns"><button class="btn btn-ghost btn-block" onclick="closeModal('m-model')">Cancelar</button><button class="btn btn-primary btn-block" onclick="saveModel()">Adicionar</button></div>
+</div></div>
+
+<div class="modalbg" id="m-shift"><div class="modal">
+  <div class="modal-handle"></div><div class="modal-title">Escalar chatter</div>
+  <div class="field"><label class="flabel">Chatter</label><select class="fselect" id="shift-chatter"></select></div>
+  <div class="fgrid2">
+    <div class="field"><label class="flabel">Entrada</label><input type="time" class="finput" id="shift-start"></div>
+    <div class="field"><label class="flabel">Saída</label><input type="time" class="finput" id="shift-end"></div>
+  </div>
+  <div class="field"><label class="flabel">Dias</label>
+    <div class="chiprow">
+      <button class="chip" data-day="seg">Seg</button><button class="chip" data-day="ter">Ter</button>
+      <button class="chip" data-day="qua">Qua</button><button class="chip" data-day="qui">Qui</button>
+      <button class="chip" data-day="sex">Sex</button><button class="chip" data-day="sab">Sáb</button>
+      <button class="chip" data-day="dom">Dom</button>
+    </div>
+  </div>
+  <div class="modalbtns"><button class="btn btn-ghost btn-block" onclick="closeModal('m-shift')">Cancelar</button><button class="btn btn-primary btn-block" onclick="saveShift()">Salvar</button></div>
+</div></div>
+
+<div class="modalbg" id="m-chatter"><div class="modal">
+  <div class="modal-handle"></div><div class="modal-title">Novo chatter</div>
+  <div class="field"><label class="flabel">Nome</label><input class="finput" id="ch-name" placeholder="Nome"></div>
+  <div class="field"><label class="flabel">Discord</label><input class="finput" id="ch-discord" placeholder="@usuario"></div>
+  <div class="field"><label class="flabel">Nível</label>
+    <select class="fselect" id="ch-level">
+      <option value="treinamento">Treinamento</option><option value="teste">Teste</option>
+      <option value="junior">Júnior</option><option value="pleno">Pleno</option><option value="senior">Sênior</option>
+    </select>
+  </div>
+  <div class="field"><label class="flabel">Notas</label><textarea class="ftext" id="ch-notes" placeholder="Observações..."></textarea></div>
+  <div class="field"><label class="flabel">Alarme de checagem de login</label>
+    <input type="time" class="finput" id="ch-watchtime" placeholder="Horário esperado de entrada">
+    <div style="font-size:11px;color:var(--text3);margin-top:6px">Você será avisado neste horário para verificar se ele entrou</div>
+  </div>
+  <div class="modalbtns"><button class="btn btn-ghost btn-block" onclick="closeModal('m-chatter')">Cancelar</button><button class="btn btn-primary btn-block" onclick="saveChatter()">Adicionar</button></div>
+</div></div>
+
+<div class="modalbg" id="m-chatter-detail"><div class="modal">
+  <div class="modal-handle"></div><div id="chatter-detail-body"></div>
+  <button class="btn btn-ghost btn-block" style="margin-top:10px" onclick="closeModal('m-chatter-detail')">Fechar</button>
+</div></div>
+
+<div class="modalbg" id="m-absence"><div class="modal">
+  <div class="modal-handle"></div><div class="modal-title">Falta / atraso</div>
+  <div class="field"><label class="flabel">Chatter</label><select class="fselect" id="abs-chatter"></select></div>
+  <div class="field"><label class="flabel">Tipo</label>
+    <select class="fselect" id="abs-type"><option value="falta">Falta</option><option value="atraso">Atraso</option><option value="saida_antecipada">Saída antecipada</option></select>
+  </div>
+  <div class="field"><label class="flabel">Data</label><input type="date" class="finput" id="abs-date"></div>
+  <div class="field"><label class="flabel">Observação</label><textarea class="ftext" id="abs-note" placeholder="Motivo..."></textarea></div>
+  <div class="modalbtns"><button class="btn btn-ghost btn-block" onclick="closeModal('m-absence')">Cancelar</button><button class="btn btn-primary btn-block" onclick="saveAbsence()">Registrar</button></div>
+</div></div>
+
+<div class="modalbg" id="m-orient"><div class="modal">
+  <div class="modal-handle"></div><div class="modal-title">Nova orientação</div>
+  <div class="field"><label class="flabel">Chatter</label><select class="fselect" id="orient-chatter"></select></div>
+  <div class="field"><label class="flabel">Turno</label>
+    <select class="fselect" id="orient-shift"><option value="manhã">Manhã</option><option value="tarde">Tarde</option><option value="noite">Noite</option></select>
+  </div>
+  <div class="field"><label class="flabel">Orientação</label><textarea class="ftext" id="orient-text" placeholder="O que foi orientado..."></textarea></div>
+  <div class="field"><label class="flabel">Meta do dia (R$)</label><input type="number" class="finput" id="orient-goal" placeholder="0.00"></div>
+  <div class="modalbtns"><button class="btn btn-ghost btn-block" onclick="closeModal('m-orient')">Cancelar</button><button class="btn btn-primary btn-block" onclick="saveOrientation()">Salvar</button></div>
+</div></div>
+
+<div class="modalbg" id="m-study"><div class="modal">
+  <div class="modal-handle"></div><div class="modal-title">Adicionar estudo</div>
+  <div class="field"><label class="flabel">Título</label><input class="finput" id="study-title" placeholder="O que estudar..."></div>
+  <div class="field"><label class="flabel">Categoria</label>
+    <select class="fselect" id="study-cat">
+      <option value="liderança">Liderança</option><option value="comunicacao">Comunicação</option>
+      <option value="vendas">Vendas</option><option value="gestao">Gestão</option>
+      <option value="treinamento">Preparar treinamento</option><option value="outro">Outro</option>
+    </select>
+  </div>
+  <div class="field"><label class="flabel">Prioridade</label>
+    <select class="fselect" id="study-prio"><option value="alta">Alta</option><option value="media">Média</option><option value="baixa">Baixa</option></select>
+  </div>
+  <div class="modalbtns"><button class="btn btn-ghost btn-block" onclick="closeModal('m-study')">Cancelar</button><button class="btn btn-primary btn-block" onclick="saveStudy()">Adicionar</button></div>
+</div></div>
+
+<div class="modalbg" id="m-overtime"><div class="modal">
+  <div class="modal-handle"></div><div class="modal-title">Registrar hora extra</div>
+  <div class="field"><label class="flabel">Chatter</label><select class="fselect" id="ot-chatter"></select></div>
+  <div class="fgrid2">
+    <div class="field"><label class="flabel">Início</label><input type="time" class="finput" id="ot-start"></div>
+    <div class="field"><label class="flabel">Fim</label><input type="time" class="finput" id="ot-end"></div>
+  </div>
+  <div class="field"><label class="flabel">Data</label><input type="date" class="finput" id="ot-date"></div>
+  <div class="field"><label class="flabel">Observação</label><input class="finput" id="ot-note" placeholder="Motivo..."></div>
+  <div class="modalbtns"><button class="btn btn-ghost btn-block" onclick="closeModal('m-overtime')">Cancelar</button><button class="btn btn-primary btn-block" onclick="saveOvertime()">Registrar</button></div>
+</div></div>
+
+<div class="modalbg" id="m-checkin"><div class="modal">
+  <div class="modal-handle"></div><div class="modal-title" id="checkin-title">Confirmar saída</div>
+  <div id="checkin-body"></div>
+  <div class="modalbtns"><button class="btn btn-ghost btn-block" onclick="closeModal('m-checkin')">Cancelar</button><button class="btn btn-primary btn-block" id="checkin-confirm">Confirmar</button></div>
+</div></div>
+
+<div class="modalbg" id="m-revreport"><div class="modal">
+  <div class="modal-handle"></div><div class="modal-title">Relatório semanal</div>
+  <div id="revreport-body"></div>
+  <button class="btn btn-ghost btn-block" style="margin-top:10px" onclick="closeModal('m-revreport')">Fechar</button>
+</div></div>
+
+<div class="modalbg" id="m-task"><div class="modal">
+  <div class="modal-handle"></div><div class="modal-title">Nova tarefa de hoje</div>
+  <div class="field"><label class="flabel">Tarefa</label><input class="finput" id="task-text" placeholder="O que precisa ser feito..."></div>
+  <div class="field"><label class="flabel">Prioridade</label>
+    <select class="fselect" id="task-prio"><option value="alta">Alta</option><option value="media" selected>Média</option><option value="baixa">Baixa</option></select>
+  </div>
+  <div class="modalbtns"><button class="btn btn-ghost btn-block" onclick="closeModal('m-task')">Cancelar</button><button class="btn btn-primary btn-block" onclick="saveTask()">Adicionar</button></div>
+</div></div>
+
+<div class="modalbg" id="m-goal"><div class="modal">
+  <div class="modal-handle"></div><div class="modal-title">Novo objetivo da semana</div>
+  <div class="field"><label class="flabel">Objetivo</label><input class="finput" id="goal-text" placeholder="Ex: Faturar R$50.000 na semana"></div>
+  <div class="field"><label class="flabel">Tipo de meta</label>
+    <select class="fselect" id="goal-type" onchange="toggleGoalTarget()">
+      <option value="valor">Valor numérico (R$, qtd...)</option>
+      <option value="simples">Simples (concluído ou não)</option>
+    </select>
+  </div>
+  <div class="field" id="goal-target-field"><label class="flabel">Meta (número alvo)</label><input type="number" class="finput" id="goal-target" placeholder="Ex: 50000"></div>
+  <div class="modalbtns"><button class="btn btn-ghost btn-block" onclick="closeModal('m-goal')">Cancelar</button><button class="btn btn-primary btn-block" onclick="saveGoal()">Adicionar</button></div>
+</div></div>
+
+<div class="modalbg" id="m-backup-export"><div class="modal">
+  <div class="modal-handle"></div><div class="modal-title">💾 Backup exportado</div>
+  <div style="font-size:12.5px;color:var(--text2);margin-bottom:10px;line-height:1.5">
+    O download direto não funciona no Safari do iPhone. Copie o texto abaixo e cole em <strong>Notas</strong> ou salve como arquivo em <strong>Arquivos</strong> — guarde com o nome <span id="backup-export-filename" style="font-family:var(--font-mono)"></span>.
+  </div>
+  <textarea class="ftext" id="backup-export-text" readonly style="min-height:160px;font-family:var(--font-mono);font-size:11px" onclick="this.select()"></textarea>
+  <div class="modalbtns">
+    <button class="btn btn-ghost btn-block" onclick="closeModal('m-backup-export')">Fechar</button>
+    <button class="btn btn-primary btn-block" onclick="copyBackupText()">Copiar texto</button>
+  </div>
+</div></div>
+
+<div class="modalbg" id="m-backup-import"><div class="modal">
+  <div class="modal-handle"></div><div class="modal-title">📥 Importar backup (colar texto)</div>
+  <div style="font-size:12.5px;color:var(--text2);margin-bottom:10px;line-height:1.5">
+    Se o seletor de arquivo não funcionar, cole aqui o conteúdo do backup que você salvou em Notas/Arquivos.
+  </div>
+  <textarea class="ftext" id="backup-import-text" placeholder="Cole aqui o conteúdo do backup..." style="min-height:160px;font-family:var(--font-mono);font-size:11px"></textarea>
+  <div class="modalbtns">
+    <button class="btn btn-ghost btn-block" onclick="closeModal('m-backup-import')">Cancelar</button>
+    <button class="btn btn-primary btn-block" onclick="importBackupFromText()">Importar</button>
+  </div>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   CENTRAL — GestorPro app logic
+   ============================================================ */
+const DB='gestorpro_v4';
+const FIREBASE_DOC_ID='central-dados'; // single shared document holding all app state
+
+/* ===========================================================
+   FIREBASE SYNC
+   The localStorage cache lets the app render instantly; Firestore
+   is the real source of truth so data survives app updates,
+   cache clears, and works across devices.
+   =========================================================== */
+let fbDb=null;
+let fbReady=false;
+let fbSaveTimer=null;
+let fbSyncStatus='connecting'; // connecting | online | offline | error
+
+function initFirebase(){
+  try{
+    const firebaseConfig={
+      apiKey:"AIzaSyA5Q5MYehtJAU18ixZLvqS4-gQnNJJD3LI",
+      authDomain:"agenciaseduct-8fd34.firebaseapp.com",
+      projectId:"agenciaseduct-8fd34",
+      storageBucket:"agenciaseduct-8fd34.firebasestorage.app",
+      messagingSenderId:"232929088781",
+      appId:"1:232929088781:web:b278bd92bf9bdc857e4c44"
+    };
+    const app=firebase.initializeApp(firebaseConfig);
+    fbDb=firebase.firestore();
+    fbReady=true;
+    listenToFirestore();
+  }catch(e){
+    console.error('Firebase init failed',e);
+    fbSyncStatus='error';
+    updateSyncBadge();
+  }
+}
+
+function listenToFirestore(){
+  if(!fbDb)return;
+  fbDb.collection('gestorpro').doc(FIREBASE_DOC_ID).onSnapshot(
+    (doc)=>{
+      if(doc.exists){
+        const remote=doc.data();
+        if(remote&&remote.payload){
+          try{
+            const parsed=JSON.parse(remote.payload);
+            S={...S,...parsed};
+            try{localStorage.setItem(DB,JSON.stringify(S));}catch(e){}
+            renderView(currentViewName());
+          }catch(e){/* ignore parse errors */}
+        }
+      } else {
+        // First time: push current local state up
+        pushToFirestore();
+      }
+      fbSyncStatus='online';
+      updateSyncBadge();
+    },
+    (err)=>{
+      console.error('Firestore listen error',err);
+      fbSyncStatus='offline';
+      updateSyncBadge();
+    }
+  );
+}
+
+function pushToFirestore(){
+  if(!fbDb||!fbReady)return;
+  fbDb.collection('gestorpro').doc(FIREBASE_DOC_ID).set({
+    payload:JSON.stringify(S),
+    updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+  }).then(()=>{
+    fbSyncStatus='online';updateSyncBadge();
+  }).catch((err)=>{
+    console.error('Firestore write error',err);
+    fbSyncStatus='offline';updateSyncBadge();
+  });
+}
+
+function updateSyncBadge(){
+  const el=document.getElementById('sync-badge');
+  if(!el)return;
+  const map={
+    connecting:{txt:'conectando…',cls:'pill-flat'},
+    online:{txt:'☁ sincronizado',cls:'pill-ok'},
+    offline:{txt:'⚠ sem conexão',cls:'pill-warn'},
+    error:{txt:'⚠ erro de sync',cls:'pill-bad'}
+  };
+  const s=map[fbSyncStatus]||map.connecting;
+  el.textContent=s.txt;
+  el.className='pill '+s.cls;
+}
+function currentViewName(){
+  const active=document.querySelector('.view.active');
+  return active?active.id.replace('v-',''):'home';
+}
+
+function save(){
+  try{localStorage.setItem(DB,JSON.stringify(S));}catch(e){}
+  // Debounce Firestore writes so rapid typing doesn't spam the network
+  clearTimeout(fbSaveTimer);
+  fbSaveTimer=setTimeout(()=>pushToFirestore(),600);
+}
+function load(){try{const d=localStorage.getItem(DB);if(d)S={...S,...JSON.parse(d)};}catch(e){}}
+let S={
+  chatters:[],shifts:[],absences:[],orientations:[],studies:[],revenues:{},models:[],
+  quickNotes:[],lastCode:null,
+  turnoLog:{},          // date -> [{chatterId, action, time, note, otEnd}]
+  midnightTasks:{},     // date -> [{id, chatterId, label, done}]
+  dailyTasks:{},        // date -> [{id, text, prio, done}]
+  weekGoals:{},         // weekKey -> [{id, text, type, target, current, done}]
+  weekNotes:{},         // weekKey -> text
+  watchAlerts:{}        // date -> {chatterId: 'pending'|'confirmed'|'missed'}
+};
+
+/* ===========================================================
+   BACKUP — export/import all data as a .json file.
+   Protects the person's data across app updates, since
+   localStorage is tied to this exact page and can be lost
+   when the file is replaced or cache is cleared.
+   =========================================================== */
+function exportBackup(){
+  try{
+    const data=JSON.stringify(S,null,2);
+    const stamp=todayKey();
+    const filename=`backup-gestorpro-${stamp}.json`;
+
+    // Try native Web Share API first (works great on iOS Safari with a real file)
+    if(navigator.share&&navigator.canShare){
+      try{
+        const file=new File([data],filename,{type:'application/json'});
+        if(navigator.canShare({files:[file]})){
+          navigator.share({files:[file],title:'Backup GestorPro'})
+            .then(()=>toast('💾 Backup compartilhado!'))
+            .catch(()=>showBackupFallback(data,filename));
+          return;
+        }
+      }catch(e){/* fall through to fallback */}
+    }
+    showBackupFallback(data,filename);
+  }catch(e){toast('⚠️ Erro ao exportar backup');}
+}
+function showBackupFallback(data,filename){
+  // iOS Safari often blocks programmatic downloads silently.
+  // Show the JSON in a copyable textarea inside a modal instead —
+  // the person can select all, copy, and paste it into Notes/Files to save.
+  const modal=document.getElementById('m-backup-export');
+  document.getElementById('backup-export-text').value=data;
+  document.getElementById('backup-export-filename').textContent=filename;
+  modal.classList.add('open');
+}
+function copyBackupText(){
+  const ta=document.getElementById('backup-export-text');
+  ta.select();ta.setSelectionRange(0,999999);
+  try{
+    document.execCommand('copy');
+    toast('✅ Copiado! Cole em Notas ou Arquivos para guardar.');
+  }catch(e){
+    toast('⚠️ Selecione o texto manualmente e copie');
+  }
+}
+function importBackup(file){
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const imported=JSON.parse(e.target.result);
+      if(!imported||typeof imported!=='object'){toast('⚠️ Arquivo inválido');return;}
+      S={...S,...imported};
+      save();
+      toast('✅ Backup importado! Recarregando...');
+      setTimeout(()=>location.reload(),1200);
+    }catch(err){toast('⚠️ Não foi possível ler o arquivo');}
+  };
+  reader.readAsText(file);
+}
+function importBackupFromText(){
+  const text=document.getElementById('backup-import-text').value.trim();
+  if(!text){toast('⚠️ Cole o conteúdo do backup primeiro');return;}
+  try{
+    const imported=JSON.parse(text);
+    if(!imported||typeof imported!=='object'){toast('⚠️ Conteúdo inválido');return;}
+    S={...S,...imported};
+    save();
+    toast('✅ Backup importado! Recarregando...');
+    setTimeout(()=>location.reload(),1200);
+  }catch(err){toast('⚠️ Não foi possível ler esse conteúdo');}
+}
+function triggerImportInput(){
+  document.getElementById('backup-file-input').click();
+}
+
+const DAYS=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+const MONTHS=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+const DAY_KEYS=['dom','seg','ter','qua','qui','sex','sab'];
+const LVLCLASS={treinamento:'lvl-treinamento',teste:'lvl-teste',junior:'lvl-junior',pleno:'lvl-pleno',senior:'lvl-senior'};
+const LVLEMOJI={treinamento:'◆',teste:'○',junior:'▲',pleno:'●',senior:'★'};
+
+// ---------- HELPERS ----------
+function p2(n){return String(n).padStart(2,'0');}
+function fmt(d){return`${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;}
+function nowHHMM(){const n=new Date();return p2(n.getHours())+':'+p2(n.getMinutes());}
+function todayKey(){return fmt(new Date());}
+function getTodayDayKey(){return DAY_KEYS[new Date().getDay()];}
+function getWeekDates(){
+  const now=new Date(),dow=now.getDay();
+  const mon=new Date(now);mon.setDate(now.getDate()-((dow+6)%7));
+  return Array.from({length:7},(_,i)=>{const d=new Date(mon);d.setDate(mon.getDate()+i);return d;});
+}
+function getWeekKey(){const wd=getWeekDates();return fmt(wd[0]);}
+function money(n){return 'R$ '+ (n||0).toLocaleString('pt-BR',{minimumFractionDigits:2});}
+function moneyShort(n){return 'R$'+(n||0).toLocaleString('pt-BR',{maximumFractionDigits:0});}
+
+// ---------- NAV ----------
+const VIEWS=['home','turno','agenda','semana','time','fat'];
+function navTo(view){
+  VIEWS.forEach(v=>document.getElementById('v-'+v).classList.remove('active'));
+  document.getElementById('v-'+view).classList.add('active');
+  document.querySelectorAll('.toptab').forEach(t=>t.classList.toggle('active',t.dataset.go===view));
+  document.querySelectorAll('.navbtn').forEach(t=>t.classList.toggle('active',t.dataset.go===view));
+  renderView(view);
+}
+function renderView(v){
+  if(v==='home')renderHome();
+  if(v==='turno')renderTurno();
+  if(v==='agenda')renderAgenda();
+  if(v==='semana')renderSemana();
+  if(v==='time')renderTeam('all');
+  if(v==='fat')renderFat();
+}
+document.querySelectorAll('.toptab,.navbtn').forEach(el=>el.addEventListener('click',()=>navTo(el.dataset.go)));
+
+// ---------- MODAL ----------
+function openModal(id){
+  document.getElementById(id).classList.add('open');
+  if(['m-shift','m-absence','m-orient','m-overtime'].includes(id))populateChatterSelects();
+  if(id==='m-overtime'){document.getElementById('ot-date').value=todayKey();document.getElementById('ot-start').value=nowHHMM();}
+  if(id==='m-revreport')buildRevReport();
+  if(id==='m-goal'){document.getElementById('goal-text').value='';document.getElementById('goal-target').value='';}
+}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.modalbg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
+function toggleGoalTarget(){
+  const t=document.getElementById('goal-type').value;
+  document.getElementById('goal-target-field').style.display=t==='valor'?'block':'none';
+}
+
+// ---------- TOAST ----------
+function toast(msg,dur=2300){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur);}
+
+// ---------- CLOCK ----------
+function updateClock(){
+  const now=new Date();
+  document.getElementById('hd-clock').textContent=`${p2(now.getHours())}:${p2(now.getMinutes())}:${p2(now.getSeconds())}`;
+  document.getElementById('hd-date').textContent=`${DAYS[now.getDay()]}, ${now.getDate()} ${MONTHS[now.getMonth()]}`;
+  updateAlarmCountdown();
+  checkMidnightGeneration();
+  checkLoginWatch();
+  updateNavDots();
+}
+
+// ---------- NAV DOTS (pending indicators) ----------
+function updateNavDots(){
+  const yest=new Date();yest.setDate(yest.getDate()-1);
+  const ykey=fmt(yest);
+  const midnightPending=(S.midnightTasks[todayKey()]||[]).filter(t=>!t.done).length+(S.midnightTasks[ykey]||[]).filter(t=>!t.done).length;
+  const dailyPending=(S.dailyTasks[todayKey()]||[]).filter(t=>!t.done).length;
+  document.getElementById('nav-dot-agenda').style.display=(midnightPending>0)?'block':'none';
+  const watchPending=Object.values(S.watchAlerts[todayKey()]||{}).filter(s=>s==='pending').length;
+  document.getElementById('nav-dot-turno').style.display=(watchPending>0)?'block':'none';
+}
+
+/* ===========================================================
+   FEATURE 1 — LOGIN WATCH ALARM (per-chatter)
+   For each chatter with a configured watchtime, fires an
+   internal alarm at that time reminding the manager to check
+   whether the chatter actually logged in.
+   =========================================================== */
+let watchFiredToday=new Set(); // chatterIds already alerted today (in-memory, resets on reload but date-keyed below avoids dup via state)
+
+function checkLoginWatch(){
+  const today=todayKey();
+  const hhmm=nowHHMM();
+  if(!S.watchAlerts[today])S.watchAlerts[today]={};
+  S.chatters.forEach(c=>{
+    if(!c.watchtime)return;
+    if(c.watchtime===hhmm){
+      const already=S.watchAlerts[today][c.id];
+      if(!already){
+        S.watchAlerts[today][c.id]='pending';
+        save();
+        toast(`⏰ Checar entrada de ${c.name} (esperado ${c.watchtime})`,6000);
+        renderHome();
+      }
+    }
+  });
+}
+
+function getWatchAlertsToday(){
+  const today=todayKey();
+  const map=S.watchAlerts[today]||{};
+  return Object.entries(map).filter(([id,status])=>status==='pending').map(([id])=>S.chatters.find(c=>c.id===id)).filter(Boolean);
+}
+
+function confirmWatch(chatterId,status){
+  const today=todayKey();
+  if(!S.watchAlerts[today])S.watchAlerts[today]={};
+  S.watchAlerts[today][chatterId]=status;
+  save();
+  renderHome();
+  const c=S.chatters.find(ch=>ch.id===chatterId);
+  toast(status==='confirmed'?`✅ ${c?c.name:'?'} confirmado online`:`⚠️ ${c?c.name:'?'} marcado como atraso`);
+  if(status==='missed'){
+    // also helpful: prefill absence quick log as atraso
+  }
+}
+
+function renderWatchBanner(){
+  const wrap=document.getElementById('home-watch-wrap');
+  const pending=getWatchAlertsToday();
+  if(!pending.length){wrap.innerHTML='';return;}
+  wrap.innerHTML=`<div class="watchbanner">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
+      <span style="font-size:16px">⏰</span><span style="font-weight:700;font-size:13.5px;color:var(--bad)">Checagem de entrada</span>
+    </div>
+    ${pending.map(c=>{
+      const color=getComputedLevelColor(c.level);
+      return`<div class="watchitem">
+        <div style="flex:1"><span style="font-weight:700;font-size:13px">${c.name}</span>
+        <span style="font-family:var(--font-mono);font-size:11px;color:var(--text2);margin-left:6px">esperado ${c.watchtime}</span></div>
+        <button class="btn btn-primary btn-xs" onclick="confirmWatch('${c.id}','confirmed')">✓ Entrou</button>
+        <button class="btn btn-danger btn-xs" onclick="confirmWatch('${c.id}','missed')">✕ Não entrou</button>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+function getComputedLevelColor(level){
+  const map={treinamento:'#6E6AF0',teste:'#8A8A93',junior:'#2F8FE0',pleno:'#C98A1F',senior:'#1F9E6E'};
+  return map[level]||'#8A8A93';
+}
+
+/* ===========================================================
+   FEATURE 2 — DAILY TASKS (general checklist, not chatter-bound)
+   =========================================================== */
+function renderDailyTasks(){
+  const el=document.getElementById('daily-tasks-list');
+  const today=todayKey();
+  const tasks=S.dailyTasks[today]||[];
+  if(!tasks.length){el.innerHTML='<div class="empty"><div class="empty-ic">✅</div><div class="empty-tx">Nenhuma tarefa para hoje.<br>Adicione itens da sua rotina de gestão.</div></div>';return;}
+  const pb={alta:'pill-bad',media:'pill-warn',baixa:'pill-flat'};
+  el.innerHTML='<div class="tasklist">'+tasks.map(t=>`
+    <div class="taskrow ${t.done?'done':''}">
+      <div class="tcheck ${t.done?'done':''}" onclick="toggleTask('${t.id}')">${t.done?'✓':''}</div>
+      <div class="tbody">
+        <div class="ttext">${t.text}</div>
+        <div class="tmeta-row"><span class="pill ${pb[t.prio]||'pill-flat'}">${t.prio}</span></div>
+      </div>
+      <button class="btn btn-icon btn-line" onclick="deleteTask('${t.id}')" style="font-size:14px">✕</button>
+    </div>`).join('')+'</div>';
+}
+function saveTask(){
+  const text=document.getElementById('task-text').value.trim();
+  if(!text){toast('⚠️ Escreva a tarefa');return;}
+  const today=todayKey();
+  if(!S.dailyTasks[today])S.dailyTasks[today]=[];
+  S.dailyTasks[today].push({id:'dt'+Date.now(),text,prio:document.getElementById('task-prio').value,done:false});
+  save();closeModal('m-task');document.getElementById('task-text').value='';
+  toast('✅ Tarefa adicionada!');renderDailyTasks();updateNavDots();
+}
+function toggleTask(id){
+  const today=todayKey();
+  const t=(S.dailyTasks[today]||[]).find(x=>x.id===id);
+  if(t){t.done=!t.done;save();renderDailyTasks();updateNavDots();}
+}
+function deleteTask(id){
+  const today=todayKey();
+  S.dailyTasks[today]=(S.dailyTasks[today]||[]).filter(x=>x.id!==id);
+  save();renderDailyTasks();toast('Removida');
+}
+
+/* ===========================================================
+   FEATURE 3 — WEEKLY GOALS (team-level planning)
+   =========================================================== */
+function renderSemana(){
+  const wk=getWeekDates();
+  document.getElementById('semana-range').textContent=`${wk[0].getDate()}/${wk[0].getMonth()+1} – ${wk[6].getDate()}/${wk[6].getMonth()+1}`;
+  document.getElementById('week-notes').value=S.weekNotes[getWeekKey()]||'';
+  renderGoals();
+  renderSemanaRevenue();
+}
+function renderGoals(){
+  const el=document.getElementById('goals-list');
+  const wkey=getWeekKey();
+  const goals=S.weekGoals[wkey]||[];
+  if(!goals.length){el.innerHTML='<div class="empty"><div class="empty-ic">🎯</div><div class="empty-tx">Nenhum objetivo definido para esta semana.<br>Defina metas para guiar o time.</div></div>';return;}
+  el.innerHTML=goals.map(g=>{
+    if(g.type==='simples'){
+      return`<div class="goalcard ${g.done?'met':''}">
+        <div class="goal-top">
+          <div class="goal-text" style="${g.done?'text-decoration:line-through;color:var(--text3)':''}">${g.text}</div>
+          <button class="tcheck ${g.done?'done':''}" onclick="toggleGoalDone('${g.id}')">${g.done?'✓':''}</button>
+        </div>
+        <button class="btn btn-icon btn-line" style="margin-top:4px" onclick="deleteGoal('${g.id}')">✕</button>
+      </div>`;
+    }
+    const pct=g.target>0?Math.min(100,Math.round((g.current/g.target)*100)):0;
+    const met=pct>=100;
+    return`<div class="goalcard ${met?'met':''}">
+      <div class="goal-top">
+        <div class="goal-text">${g.text}</div>
+        <button class="btn btn-icon btn-line" onclick="deleteGoal('${g.id}')">✕</button>
+      </div>
+      <div class="goalbar-track"><div class="goalbar-fill" style="width:${pct}%"></div></div>
+      <div class="goal-nums">
+        <span>${g.current.toLocaleString('pt-BR')} / ${g.target.toLocaleString('pt-BR')}</span>
+        <span style="color:${met?'var(--ok)':'var(--warn)'}">${pct}%</span>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:9px">
+        <input type="number" class="finput" style="flex:1" id="goal-update-${g.id}" placeholder="Atualizar valor atual...">
+        <button class="btn btn-soft btn-sm" onclick="updateGoalProgress('${g.id}')">Atualizar</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function saveGoal(){
+  const text=document.getElementById('goal-text').value.trim();
+  if(!text){toast('⚠️ Descreva o objetivo');return;}
+  const type=document.getElementById('goal-type').value;
+  const target=parseFloat(document.getElementById('goal-target').value)||0;
+  const wkey=getWeekKey();
+  if(!S.weekGoals[wkey])S.weekGoals[wkey]=[];
+  S.weekGoals[wkey].push({id:'g'+Date.now(),text,type,target,current:0,done:false});
+  save();closeModal('m-goal');toast('🎯 Objetivo adicionado!');renderGoals();
+}
+function toggleGoalDone(id){
+  const wkey=getWeekKey();
+  const g=(S.weekGoals[wkey]||[]).find(x=>x.id===id);
+  if(g){g.done=!g.done;save();renderGoals();}
+}
+function updateGoalProgress(id){
+  const wkey=getWeekKey();
+  const g=(S.weekGoals[wkey]||[]).find(x=>x.id===id);
+  const val=parseFloat(document.getElementById('goal-update-'+id)?.value);
+  if(g&&!isNaN(val)){g.current=val;save();toast('📈 Progresso atualizado!');renderGoals();}
+}
+function deleteGoal(id){
+  const wkey=getWeekKey();
+  S.weekGoals[wkey]=(S.weekGoals[wkey]||[]).filter(x=>x.id!==id);
+  save();renderGoals();toast('Removido');
+}
+function saveWeekNotes(){
+  S.weekNotes[getWeekKey()]=document.getElementById('week-notes').value;
+  save();toast('📝 Notas salvas!');
+}
+function renderSemanaRevenue(){
+  const el=document.getElementById('semana-revenue-preview');
+  const wd=getWeekDates();
+  let total=0;
+  wd.forEach(d=>S.chatters.forEach(c=>S.models.forEach(m=>{total+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(d)}`])||0;})));
+  el.innerHTML=`<div style="font-family:var(--font-mono);font-size:30px;font-weight:700;color:var(--ok);text-align:center;padding:8px 0">${money(total)}</div>
+  <div class="barchart">${['SEG','TER','QUA','QUI','SEX','SÁB','DOM'].map((lb,i)=>{
+    let r=0;S.chatters.forEach(c=>S.models.forEach(m=>{r+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(wd[i])}`])||0;}));
+    const max=Math.max(...wd.map(dd=>{let rr=0;S.chatters.forEach(c=>S.models.forEach(m=>{rr+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(dd)}`])||0;}));return rr;}),1);
+    const h=Math.max(3,Math.round((r/max)*46));
+    return`<div class="barcol"><div class="barfill" style="height:${h}px"></div><div class="barlb">${lb}</div></div>`;
+  }).join('')}</div>`;
+}
+
+/* ===========================================================
+   MIDNIGHT TASKS (existing feature, kept)
+   =========================================================== */
+function generateMidnightTasks(dateKey){
+  if(S.midnightTasks[dateKey])return;
+  const worked=getChattersThatWorkedOn(dateKey);
+  if(!worked.length)return;
+  S.midnightTasks[dateKey]=worked.map(cid=>{
+    const c=S.chatters.find(ch=>ch.id===cid);
+    return{id:'mt'+Date.now()+Math.random(),chatterId:cid,label:`Relatório: ${c?c.name:'?'}`,done:false};
+  });
+  save();
+}
+function getChattersThatWorkedOn(dateKey){
+  const log=S.turnoLog[dateKey]||[];
+  const ids=new Set();
+  log.filter(e=>e.action==='in').forEach(e=>ids.add(e.chatterId));
+  const dow=new Date(dateKey+'T12:00:00').getDay();
+  const dk=DAY_KEYS[dow];
+  S.shifts.filter(s=>s.days&&s.days.includes(dk)).forEach(s=>ids.add(s.chatterId));
+  return Array.from(ids).filter(id=>S.chatters.find(c=>c.id===id));
+}
+function checkMidnightGeneration(){
+  const now=new Date();
+  if(now.getHours()===0&&now.getMinutes()<5){
+    const yest=new Date(now);yest.setDate(yest.getDate()-1);
+    generateMidnightTasks(fmt(yest));
+  }
+}
+function renderMidnightPreviewHome(){
+  const yest=new Date();yest.setDate(yest.getDate()-1);
+  const key=fmt(yest);
+  const tasks=S.midnightTasks[key]||[];
+  const pending=tasks.filter(t=>!t.done).length;
+  const panel=document.getElementById('home-midnight-panel');
+  if(pending>0){
+    panel.style.display='block';
+    document.getElementById('home-midnight-preview').innerHTML=tasks.filter(t=>!t.done).slice(0,3).map(t=>`
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">
+        <div style="width:7px;height:7px;border-radius:50%;background:var(--warn)"></div>
+        <span style="font-size:12.5px">${t.label}</span>
+      </div>`).join('');
+  } else panel.style.display='none';
+}
+function renderMidnightList(){
+  const el=document.getElementById('midnight-list');
+  const badge=document.getElementById('midnight-badge');
+  const today=todayKey();
+  const yest=new Date();yest.setDate(yest.getDate()-1);const yestKey=fmt(yest);
+  let all=[];
+  [yestKey,today].forEach(dk=>{(S.midnightTasks[dk]||[]).forEach(t=>all.push({...t,dateKey:dk}));});
+  const pending=all.filter(t=>!t.done).length;
+  badge.textContent=`${pending} pendentes`;
+  badge.className='pill '+(pending>0?'pill-warn':'pill-ok');
+  if(!all.length){el.innerHTML='<div class="empty"><div class="empty-tx">Tarefas de relatório aparecem aqui à 00h com os chatters que trabalharam.</div></div>';return;}
+  el.innerHTML='<div class="tasklist">'+all.map(t=>{
+    const ot=getChatterOvertimeOn(t.chatterId,t.dateKey);
+    return`<div class="taskrow ${t.done?'done':''}">
+      <div class="tcheck ${t.done?'done':''}" onclick="toggleMidnight('${t.dateKey}','${t.id}')">${t.done?'✓':''}</div>
+      <div class="tbody"><div class="ttext">${t.label}</div>
+      <div class="tmeta-row"><span class="pill pill-flat">${t.dateKey}</span>${ot>0?`<span class="pill pill-warn">⏱ ${ot}min extra</span>`:''}</div></div>
+      ${t.done?'<span class="pill pill-ok">enviado</span>':'<span class="pill pill-warn">pendente</span>'}
+    </div>`;
+  }).join('')+'</div>';
+}
+function toggleMidnight(dateKey,id){
+  const t=(S.midnightTasks[dateKey]||[]).find(x=>x.id===id);
+  if(t){t.done=!t.done;save();renderMidnightList();renderMidnightPreviewHome();updateNavDots();toast(t.done?'✅ Marcado como enviado!':'↩ Desmarcado');}
+}
+
+/* ===========================================================
+   HOME
+   =========================================================== */
+function renderHome(){
+  const today=todayKey();
+  const log=S.turnoLog[today]||[];
+  document.getElementById('s-online').textContent=getCurrentOnline().length;
+  document.getElementById('s-rev').textContent=moneyShort(getTodayTotalRevenue());
+  document.getElementById('s-ot').textContent=log.filter(e=>e.action==='overtime').length;
+  document.getElementById('s-abs').textContent=getWeekAbsencesData().length;
+  renderWatchBanner();
+  renderMidnightPreviewHome();
+
+  const listEl=document.getElementById('home-roster');
+  if(!S.chatters.length){listEl.innerHTML='<div class="empty"><div class="empty-tx">Cadastre chatters na aba Equipe</div></div>';return;}
+  listEl.innerHTML='<div class="roster">'+S.chatters.map(c=>{
+    const status=getChatterStatus(c.id,today);
+    const color=getComputedLevelColor(c.level);
+    const lbl=status==='online'?'online':status==='overtime'?'hora extra':'offline';
+    return`<div class="rrow ${status==='online'?'on':status==='overtime'?'ot':'off'}">
+      <div class="ravatar" style="background:${color}22;color:${color}">${c.name.slice(0,2).toUpperCase()}</div>
+      <div class="rinfo"><div class="rname">${c.name}</div><div class="rmeta">${lbl}</div></div>
+      <span class="pill ${status==='online'?'pill-ok':status==='overtime'?'pill-warn':'pill-flat'}">${lbl}</span>
+    </div>`;
+  }).join('')+'</div>';
+  const notes=S.quickNotes;if(notes.length)document.getElementById('quicknote').value=notes[notes.length-1].text||'';
+}
+function saveQuickNote(){const v=document.getElementById('quicknote').value.trim();if(!v)return;S.quickNotes.push({text:v,date:new Date().toISOString()});save();toast('✅ Salvo!');}
+
+// ---------- status helpers ----------
+function getChatterStatus(chatterId,dateKey){
+  const log=(S.turnoLog[dateKey]||[]).filter(e=>e.chatterId===chatterId);
+  if(!log.length)return'offline';
+  const last=log[log.length-1];
+  if(last.action==='out')return'offline';
+  if(last.action==='overtime')return'overtime';
+  if(last.action==='in')return'online';
+  return'offline';
+}
+function getCurrentOnline(){const today=todayKey();return S.chatters.filter(c=>['online','overtime'].includes(getChatterStatus(c.id,today)));}
+function getChatterOvertimeOn(chatterId,dateKey){
+  const log=(S.turnoLog[dateKey]||[]).filter(e=>e.chatterId===chatterId&&e.action==='overtime');
+  return log.reduce((sum,e)=>{
+    if(e.otEnd&&e.time){const[h1,m1]=e.time.split(':').map(Number);const[h2,m2]=e.otEnd.split(':').map(Number);return sum+Math.max(0,(h2*60+m2)-(h1*60+m1));}
+    return sum;
+  },0);
+}
+
+/* ===========================================================
+   TURNO
+   =========================================================== */
+let selectedDay='seg';
+function renderTurno(){
+  document.getElementById('turno-sub').textContent='Hoje · '+todayKey();
+  renderTurnoBoard();renderScheduleForDay(selectedDay);renderAlarmList();renderAbsenceList();
+}
+function renderTurnoBoard(){
+  const el=document.getElementById('turno-board');
+  if(!S.chatters.length){el.innerHTML='<div class="empty"><div class="empty-tx">Cadastre chatters na aba Equipe</div></div>';return;}
+  const today=todayKey();
+  el.innerHTML='<div class="roster">'+S.chatters.map(c=>{
+    const status=getChatterStatus(c.id,today);
+    const color=getComputedLevelColor(c.level);
+    const log=(S.turnoLog[today]||[]).filter(e=>e.chatterId===c.id);
+    const last=log.length?log[log.length-1]:null;
+    const since=last&&last.action==='in'?` · desde ${last.time}`:'';
+    const otMins=getChatterOvertimeOn(c.id,today);
+    let actions='';
+    if(status==='offline')actions=`<button class="btn btn-primary btn-xs" onclick="doCheckin('${c.id}','in')">▶ entrou</button>`;
+    else if(status==='online')actions=`<button class="btn btn-danger btn-xs" onclick="doCheckin('${c.id}','out')">■ saiu</button><button class="btn btn-soft btn-xs" onclick="doCheckin('${c.id}','overtime')">⏱</button>`;
+    else if(status==='overtime')actions=`<button class="btn btn-danger btn-xs" onclick="doCheckin('${c.id}','out')">■ saiu</button>`;
+    return`<div class="rrow ${status==='online'?'on':status==='overtime'?'ot':'off'}">
+      <div class="ravatar" style="background:${color}22;color:${color}">${c.name.slice(0,2).toUpperCase()}</div>
+      <div class="rinfo"><div class="rname">${c.name}</div>
+      <div class="rmeta">${status==='online'?'online'+since:status==='overtime'?'hora extra':'offline'}${otMins>0?` · +${otMins}min`:''}</div></div>
+      <div class="ractions">${actions}</div>
+    </div>`;
+  }).join('')+'</div>';
+}
+function doCheckin(chatterId,action){
+  const c=S.chatters.find(ch=>ch.id===chatterId);if(!c)return;
+  const today=todayKey();
+  if(!S.turnoLog[today])S.turnoLog[today]=[];
+  if(action==='overtime'){
+    populateChatterSelects();
+    document.getElementById('ot-date').value=today;document.getElementById('ot-start').value=nowHHMM();
+    setTimeout(()=>{const sel=document.getElementById('ot-chatter');if(sel)sel.value=chatterId;},40);
+    openModal('m-overtime');return;
+  }
+  if(action==='out'){openCheckinOut(chatterId);return;}
+  S.turnoLog[today].push({chatterId,action:'in',time:nowHHMM()});
+  save();toast(`✅ ${c.name} marcado como online`);renderTurnoBoard();renderHome();
+}
+function openCheckinOut(chatterId){
+  const c=S.chatters.find(ch=>ch.id===chatterId);
+  document.getElementById('checkin-title').textContent=`Saída — ${c.name}`;
+  const others=S.chatters.filter(ch=>ch.id!==chatterId&&getChatterStatus(ch.id,todayKey())==='offline');
+  document.getElementById('checkin-body').innerHTML=`
+    <p style="font-size:13px;color:var(--text2);margin-bottom:12px">Quem entrou no lugar de <strong style="color:var(--text)">${c.name}</strong>?</p>
+    <div id="rep-list">
+      ${others.map(ch=>`<div class="taskrow" style="cursor:pointer" onclick="selectRep('${ch.id}')">
+        <div class="tcheck" id="rep-${ch.id}"></div>
+        <div class="tbody"><div class="ttext">${ch.name}</div><div class="tmeta-row"><span class="pill pill-flat">${ch.level}</span></div></div>
+      </div>`).join('')}
+      <div class="taskrow" style="cursor:pointer" onclick="selectRep('none')">
+        <div class="tcheck" id="rep-none"></div>
+        <div class="tbody"><div class="ttext" style="color:var(--text2)">Ninguém entrou</div></div>
+      </div>
+    </div>`;
+  let rep=null;
+  window.selectRep=function(id){
+    document.querySelectorAll('#rep-list .tcheck').forEach(e=>{e.classList.remove('done');e.textContent='';});
+    document.getElementById('rep-'+id).classList.add('done');document.getElementById('rep-'+id).textContent='✓';
+    rep=id;
+  };
+  document.getElementById('checkin-confirm').onclick=function(){
+    const today=todayKey();if(!S.turnoLog[today])S.turnoLog[today]=[];
+    S.turnoLog[today].push({chatterId,action:'out',time:nowHHMM()});
+    if(rep&&rep!=='none'){
+      S.turnoLog[today].push({chatterId:rep,action:'in',time:nowHHMM()});
+      const r=S.chatters.find(ch=>ch.id===rep);
+      toast(`✅ ${c.name} saiu · ${r?r.name:'?'} entrou`);
+    } else toast(`✅ ${c.name} saiu`);
+    save();closeModal('m-checkin');renderTurnoBoard();renderHome();
+  };
+  openModal('m-checkin');
+}
+function renderScheduleForDay(day){
+  const list=document.getElementById('schedule-list');
+  const shifts=S.shifts.filter(s=>s.days&&s.days.includes(day));
+  if(!shifts.length){list.innerHTML='<div class="empty"><div class="empty-tx">Nenhum turno cadastrado</div></div>';return;}
+  list.innerHTML='<div style="display:flex;flex-direction:column;gap:8px">'+shifts.sort((a,b)=>a.start.localeCompare(b.start)).map(s=>{
+    const c=S.chatters.find(ch=>ch.id===s.chatterId);if(!c)return'';
+    const color=getComputedLevelColor(c.level);
+    return`<div class="rrow">
+      <div style="font-family:var(--font-mono);background:var(--bg-soft);border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;color:var(--warn);text-align:center;min-width:70px">${s.start}<br><span style="font-size:9px;color:var(--text3)">até</span><br>${s.end}</div>
+      <div class="rinfo"><div class="rname">${c.name}</div><span class="pill ${LVLCLASS[c.level]}" style="border:1px solid;margin-top:4px">${c.level}</span></div>
+      <button class="btn btn-icon btn-line" onclick="deleteShift('${s.id}')">✕</button>
+    </div>`;
+  }).join('')+'</div>';
+}
+function renderAlarmList(){
+  const times=getShiftTimes();
+  document.getElementById('alarm-badge').textContent=`${times.length} horários`;
+  document.getElementById('alarm-times').innerHTML=times.length?times.map(t=>`<span class="pill pill-warn" style="margin:2px">${t}</span>`).join(''):'<span style="color:var(--text3);font-size:12px">Nenhum horário</span>';
+}
+function renderAbsenceList(){
+  const el=document.getElementById('absence-list');
+  const week=getWeekAbsencesData();
+  if(!week.length){el.innerHTML='<div class="empty"><div class="empty-tx">Nenhuma ocorrência esta semana</div></div>';return;}
+  const tb={falta:'pill-bad',atraso:'pill-warn',saida_antecipada:'pill-info'};
+  const tl={falta:'Falta',atraso:'Atraso',saida_antecipada:'Saída antecip.'};
+  el.innerHTML=week.slice(0,6).map(a=>{
+    const c=S.chatters.find(ch=>ch.id===a.chatterId);
+    return`<div class="reprow"><div><div style="font-size:13px;font-weight:700">${c?c.name:'?'}</div><div style="font-size:11px;color:var(--text2)">${a.date}${a.note?' · '+a.note:''}</div></div><span class="pill ${tb[a.type]||'pill-flat'}">${tl[a.type]||a.type}</span></div>`;
+  }).join('');
+}
+document.getElementById('day-tabs').addEventListener('click',e=>{
+  const b=e.target.closest('.segtab');if(!b)return;
+  selectedDay=b.dataset.day;
+  document.querySelectorAll('#day-tabs .segtab').forEach(x=>x.classList.remove('active'));b.classList.add('active');
+  renderScheduleForDay(selectedDay);
+});
+
+// ---------- alarm (shift change) ----------
+let alarmActive=false;
+function getShiftTimes(){const t=new Set();S.shifts.forEach(s=>{if(s.start)t.add(s.start);if(s.end)t.add(s.end);});return Array.from(t).sort();}
+function getNextAlarmTime(){
+  const times=getShiftTimes();if(!times.length)return null;
+  const hhmm=nowHHMM();for(const t of times){if(t>hhmm)return t;}return times[0];
+}
+function updateAlarmCountdown(){
+  const next=getNextAlarmTime();
+  ['home-countdown','turno-countdown'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='--:--:--';});
+  if(!next)return;
+  const now=new Date();let[th,tm]=next.split(':').map(Number);
+  let target=new Date(now);target.setHours(th,tm,0,0);if(target<=now)target.setDate(target.getDate()+1);
+  let diff=Math.floor((target-now)/1000);
+  const h=Math.floor(diff/3600),m=Math.floor((diff%3600)/60),s=diff%60;
+  const str=`${p2(h)}:${p2(m)}:${p2(s)}`;
+  ['home-countdown','turno-countdown'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=str;});
+  const nl=document.getElementById('home-next-lb');if(nl)nl.textContent=`próxima troca · ${next}`;
+  const nl2=document.getElementById('turno-next-lb');if(nl2)nl2.textContent=`para a troca das ${next}`;
+  if(diff===0&&!alarmActive)triggerShiftAlarm(next);
+}
+function triggerShiftAlarm(time){
+  alarmActive=true;const code=genCode();S.lastCode={code,time,date:new Date().toISOString()};save();
+  ['home-codebox','turno-codebox'].forEach(id=>{const el=document.getElementById(id);if(el){el.style.display='block';el.textContent=code;}});
+  const ring=document.getElementById('turno-ring');if(ring)ring.classList.add('ringing');
+  toast(`🔔 Troca de turno! Código: ${code}`,8000);
+  setTimeout(()=>{alarmActive=false;if(ring)ring.classList.remove('ringing');},30000);
+}
+function genCode(){const c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let r='';for(let i=0;i<6;i++)r+=c[Math.floor(Math.random()*c.length)];return r;}
+function generateCode(){
+  const code=genCode();S.lastCode={code,time:'manual',date:new Date().toISOString()};save();
+  ['home-codebox','turno-codebox'].forEach(id=>{const el=document.getElementById(id);if(el){el.style.display='block';el.textContent=code;}});
+  toast(`🔑 Código: ${code}`);
+}
+
+/* ===========================================================
+   EXPORT TO CALENDAR (.ics) — real phone notifications
+   Generates one recurring weekly event per shift-change time
+   already registered in the weekly schedule (S.shifts).
+   The person imports this into iPhone Calendar so they get a
+   real push alert even with the app closed.
+   =========================================================== */
+const ICS_DAY_MAP={dom:'SU',seg:'MO',ter:'TU',qua:'WE',qui:'TH',sex:'FR',sab:'SA'};
+function icsEscape(str){
+  return String(str)
+    .split('\\').join('\\\\')
+    .split(';').join('\\;')
+    .split(',').join('\\,')
+    .split('\n').join('\\n');
+}
+function icsDateTimeFromTime(hhmm){
+  // Build the first upcoming occurrence date for a given HH:MM, returns {dtstart, byday}
+  const [h,m]=hhmm.split(':').map(Number);
+  const now=new Date();
+  const d=new Date(now);d.setHours(h,m,0,0);
+  if(d<=now)d.setDate(d.getDate()+1);
+  return d;
+}
+function fmtICSDate(d){
+  return `${d.getFullYear()}${p2(d.getMonth()+1)}${p2(d.getDate())}T${p2(d.getHours())}${p2(d.getMinutes())}00`;
+}
+function buildICSCalendar(){
+  // Group shifts by time -> collect which weekdays use that time (for entry and for exit)
+  const timeDays={}; // 'HH:MM' -> Set of ics day codes
+  S.shifts.forEach(s=>{
+    if(s.start&&s.days){
+      if(!timeDays[s.start])timeDays[s.start]=new Set();
+      s.days.forEach(d=>timeDays[s.start].add(ICS_DAY_MAP[d]));
+    }
+    if(s.end&&s.days){
+      if(!timeDays[s.end])timeDays[s.end]=new Set();
+      s.days.forEach(d=>timeDays[s.end].add(ICS_DAY_MAP[d]));
+    }
+  });
+  const times=Object.keys(timeDays).sort();
+  if(!times.length)return null;
+
+  let ics=[
+    'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//GestorPro//Turno//PT-BR','CALSCALE:GREGORIAN'
+  ];
+  times.forEach((t,idx)=>{
+    const days=Array.from(timeDays[t]).join(',');
+    const startDate=icsDateTimeFromTime(t);
+    const endDate=new Date(startDate.getTime()+15*60000); // 15min duration
+    const uid=`gestorpro-turno-${idx}-${Date.now()}@gestorpro.local`;
+    ics.push(
+      'BEGIN:VEVENT',
+      `UID:${uid}`,
+      `DTSTAMP:${fmtICSDate(new Date())}Z`,
+      `DTSTART:${fmtICSDate(startDate)}`,
+      `DTEND:${fmtICSDate(endDate)}`,
+      `RRULE:FREQ=WEEKLY;BYDAY=${days}`,
+      `SUMMARY:${icsEscape('🔔 Troca de turno · '+t)}`,
+      `DESCRIPTION:${icsEscape('Verificar entradas e saídas dos chatters no horário de '+t+'. Gerar código de acesso.')}`,
+      'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:Troca de turno agora','TRIGGER:-PT0M','END:VALARM',
+      'END:VEVENT'
+    );
+  });
+  ics.push('END:VCALENDAR');
+  return ics.join('\r\n');
+}
+function exportCalendar(){
+  const ics=buildICSCalendar();
+  if(!ics){toast('⚠️ Cadastre horários na escala semanal primeiro');return;}
+  const blob=new Blob([ics],{type:'text/calendar;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='turnos-gestorpro.ics';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+  toast('📅 Calendário exportado! Abra o arquivo para importar.');
+}
+
+/* ===========================================================
+   AGENDA
+   =========================================================== */
+function renderAgenda(){renderDailyTasks();renderMidnightList();renderOrientList();renderStudyList();}
+function renderOrientList(){
+  const el=document.getElementById('orient-list');
+  const today=todayKey();const todayO=S.orientations.filter(o=>o.date===today);
+  const yest=new Date();yest.setDate(yest.getDate()-1);const yO=S.orientations.filter(o=>o.date===fmt(yest));
+  let html='';
+  if(yO.length){
+    html+=`<div style="margin-bottom:12px"><div class="sectionlb" style="color:var(--warn)">↻ follow-up de ontem</div>
+    ${yO.map(o=>{const c=S.chatters.find(ch=>ch.id===o.chatterId);return`<div class="logitem alt"><div class="logdate">${c?c.name:'?'} · ${o.shift}</div><div class="logtext">${o.text}</div></div>`;}).join('')}</div>`;
+  }
+  if(!todayO.length){html+='<div class="empty"><div class="empty-ic">🎯</div><div class="empty-tx">Nenhuma orientação hoje</div></div>';}
+  else{
+    html+='<div class="sectionlb">hoje</div>';
+    html+=todayO.map(o=>{const c=S.chatters.find(ch=>ch.id===o.chatterId);
+      return`<div class="logitem"><div class="logdate">${c?c.name:'?'} · turno ${o.shift}</div><div class="logtext">${o.text}</div>
+      ${o.goal?`<div style="margin-top:5px;font-family:var(--font-mono);font-size:12px;color:var(--ok)">meta: ${money(parseFloat(o.goal))}</div>`:''}
+      <button class="btn btn-icon btn-line" style="margin-top:8px" onclick="deleteOrientation('${o.id}')">✕</button></div>`;
+    }).join('');
+  }
+  el.innerHTML=html;
+}
+function renderStudyList(){
+  const el=document.getElementById('study-list');
+  if(!S.studies.length){el.innerHTML='<div class="empty"><div class="empty-ic">📚</div><div class="empty-tx">Adicione itens de estudo</div></div>';return;}
+  const pb={alta:'pill-bad',media:'pill-warn',baixa:'pill-flat'};
+  el.innerHTML='<div class="tasklist">'+S.studies.map(s=>`<div class="taskrow ${s.done?'done':''}">
+    <div class="tcheck ${s.done?'done':''}" onclick="toggleStudy('${s.id}')">${s.done?'✓':''}</div>
+    <div class="tbody"><div class="ttext">${s.title}</div>
+    <div class="tmeta-row"><span class="pill pill-info">${s.category}</span><span class="pill ${pb[s.priority]||'pill-flat'}">${s.priority}</span></div></div>
+    <button class="btn btn-icon btn-line" onclick="deleteStudy('${s.id}')">✕</button>
+  </div>`).join('')+'</div>';
+}
+
+/* ===========================================================
+   TEAM
+   =========================================================== */
+let teamFilter='all';
+document.getElementById('team-filter-tabs').addEventListener('click',e=>{
+  const b=e.target.closest('.segtab');if(!b)return;
+  teamFilter=b.dataset.lvl;
+  document.querySelectorAll('#team-filter-tabs .segtab').forEach(x=>x.classList.remove('active'));b.classList.add('active');
+  renderTeam(teamFilter);
+});
+function renderTeam(filter){
+  const list=document.getElementById('team-list');
+  let chatters=S.chatters;if(filter!=='all')chatters=chatters.filter(c=>c.level===filter);
+  if(!chatters.length){list.innerHTML='<div class="empty"><div class="empty-ic">▦</div><div class="empty-tx">Nenhum chatter encontrado</div></div>';return;}
+  list.innerHTML=chatters.map(c=>{
+    const color=getComputedLevelColor(c.level);
+    const revWeek=getChatterWeekRevenue(c.id);
+    const status=getChatterStatus(c.id,todayKey());
+    const otMins=getChatterOvertimeOn(c.id,todayKey());
+    const dotColor=status==='online'?'var(--ok)':status==='overtime'?'var(--warn)':'var(--text3)';
+    return`<div class="teamcard" onclick="openChatterDetail('${c.id}')">
+      <div class="ravatar" style="width:42px;height:42px;background:${color}22;color:${color}">${c.name.slice(0,2).toUpperCase()}</div>
+      <div class="rinfo">
+        <div style="display:flex;align-items:center;gap:6px"><span class="rname">${c.name}</span><div class="tc-status" style="background:${dotColor}"></div></div>
+        <div class="rmeta">${c.discord||''} · ${moneyShort(revWeek)} semana</div>
+        <div class="tmeta-row"><span class="pill ${LVLCLASS[c.level]}" style="border:1px solid">${c.level}</span>${otMins>0?`<span class="pill pill-warn">+${otMins}min</span>`:''}${c.watchtime?`<span class="pill pill-info">⏰ ${c.watchtime}</span>`:''}</div>
+      </div>
+      <span style="color:var(--text3);font-size:18px">›</span>
+    </div>`;
+  }).join('');
+}
+function openChatterDetail(id){
+  const c=S.chatters.find(ch=>ch.id===id);if(!c)return;
+  const color=getComputedLevelColor(c.level);
+  const orients=S.orientations.filter(o=>o.chatterId===id).slice(-5).reverse();
+  const revWeek=getChatterWeekRevenue(id);
+  const today=todayKey();
+  const weekDates=getWeekDates();let weekOT=0;weekDates.forEach(d=>weekOT+=getChatterOvertimeOn(id,fmt(d)));
+  const revRows=S.models.map(m=>{
+    const key=`${id}_${m.id}_${today}`;const val=S.revenues[key]||'';
+    return`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
+      <span style="font-size:13px;color:var(--text2)">${m.emoji||'🧩'} ${m.name}</span>
+      <div style="display:flex;align-items:center;gap:5px"><span style="font-family:var(--font-mono);color:var(--text3);font-size:12px">R$</span>
+      <input type="number" class="finput" style="width:84px;text-align:right;padding:6px 8px;font-size:13px;font-family:var(--font-mono)" value="${val}" placeholder="0" oninput="saveRevenue('${id}','${m.id}',this.value)"></div>
+    </div>`;
+  }).join('');
+  document.getElementById('chatter-detail-body').innerHTML=`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+      <div class="ravatar" style="width:50px;height:50px;font-size:19px;background:${color}22;color:${color}">${c.name.slice(0,2).toUpperCase()}</div>
+      <div><div style="font-size:17px;font-weight:700">${c.name}</div><div style="font-size:12px;color:var(--text2)">${c.discord||'sem discord'}</div>
+      <span class="pill ${LVLCLASS[c.level]}" style="border:1px solid;margin-top:4px">${c.level}</span></div>
+    </div>
+    <div class="statgrid">
+      <div class="statcell"><div class="statval" style="font-size:18px;color:var(--ok)">${moneyShort(revWeek)}</div><div class="statlb">Semana</div></div>
+      <div class="statcell"><div class="statval" style="font-size:18px;color:var(--warn)">${weekOT}min</div><div class="statlb">H.Extra sem.</div></div>
+    </div>
+    ${S.models.length?`<div class="field"><label class="flabel">Faturamento hoje por modelo</label>${revRows}</div>`:''}
+    <div class="field"><label class="flabel">Nível</label>
+      <select class="fselect" id="dl-level-${id}">
+        <option value="treinamento" ${c.level==='treinamento'?'selected':''}>Treinamento</option>
+        <option value="teste" ${c.level==='teste'?'selected':''}>Teste</option>
+        <option value="junior" ${c.level==='junior'?'selected':''}>Júnior</option>
+        <option value="pleno" ${c.level==='pleno'?'selected':''}>Pleno</option>
+        <option value="senior" ${c.level==='senior'?'selected':''}>Sênior</option>
+      </select>
+    </div>
+    <div class="field"><label class="flabel">⏰ Alarme de checagem de login</label>
+      <input type="time" class="finput" id="dl-watch-${id}" value="${c.watchtime||''}">
+    </div>
+    <div class="field"><label class="flabel">Mapeamento / notas</label><textarea class="ftext" id="dl-notes-${id}">${c.notes||''}</textarea></div>
+    <button class="btn btn-amber btn-block" style="margin-bottom:12px" onclick="saveChatterDetail('${id}')">Salvar alterações</button>
+    <div class="divider"></div>
+    <div class="sectionlb">últimas orientações</div>
+    ${orients.length?orients.map(o=>`<div class="logitem"><div class="logdate">${o.date} · ${o.shift||''}</div><div class="logtext">${o.text}</div></div>`).join(''):'<div style="color:var(--text3);font-size:13px">Nenhuma orientação</div>'}
+    <button class="btn btn-danger btn-block" style="margin-top:12px" onclick="deleteChatter('${id}')">Remover chatter</button>
+  `;
+  openModal('m-chatter-detail');
+}
+function saveChatterDetail(id){
+  const c=S.chatters.find(ch=>ch.id===id);if(!c)return;
+  c.level=document.getElementById('dl-level-'+id)?.value||c.level;
+  c.notes=document.getElementById('dl-notes-'+id)?.value||c.notes;
+  c.watchtime=document.getElementById('dl-watch-'+id)?.value||'';
+  save();toast('✅ Atualizado!');renderTeam(teamFilter);
+}
+function deleteChatter(id){
+  if(!confirm('Remover chatter?'))return;
+  S.chatters=S.chatters.filter(c=>c.id!==id);S.shifts=S.shifts.filter(s=>s.chatterId!==id);
+  save();closeModal('m-chatter-detail');toast('Removido');renderTeam(teamFilter);
+}
+
+/* ===========================================================
+   FATURAMENTO
+   =========================================================== */
+function renderFat(){renderModelsList();renderRevenueTable();document.getElementById('fat-date-lb').textContent='Hoje · '+todayKey();renderReport('week');}
+function renderModelsList(){
+  const el=document.getElementById('models-list');
+  if(!S.models.length){el.innerHTML='<div style="color:var(--text3);font-size:13px">Nenhum modelo. Clique + modelo.</div>';return;}
+  el.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:6px">'+S.models.map(m=>`<div style="display:inline-flex;align-items:center;gap:6px;background:var(--bg-soft);border:1px solid var(--line);border-radius:8px;padding:5px 10px">
+    <span>${m.emoji||'🧩'}</span><span style="font-size:13px;font-weight:600">${m.name}</span>
+    <button onclick="deleteModel('${m.id}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px">✕</button>
+  </div>`).join('')+'</div>';
+}
+function renderRevenueTable(){
+  const el=document.getElementById('revenue-table');
+  if(!S.models.length){el.innerHTML='<div class="empty"><div class="empty-tx">Cadastre modelos para lançar faturamento</div></div>';return;}
+  const today=todayKey();
+  const workedIds=new Set(getChattersThatWorkedOn(today));
+  let activeChatters=S.chatters.filter(c=>workedIds.has(c.id));
+  const restChatters=S.chatters.filter(c=>!workedIds.has(c.id));
+
+  if(!activeChatters.length&&!S.chatters.length){el.innerHTML='<div class="empty"><div class="empty-tx">Cadastre chatters para lançar faturamento</div></div>';return;}
+
+  let html='';
+  if(!activeChatters.length){
+    html+='<div class="empty" style="padding:18px"><div class="empty-tx">Nenhum chatter escalado ou com entrada registrada hoje.<br>Marque entrada na aba Turno ou escale alguém.</div></div>';
+  } else {
+    html+=`<div style="overflow-x:auto"><table class="rtable"><thead><tr><th>Chatter</th>${S.models.map(m=>`<th style="text-align:right">${m.emoji} ${m.name}</th>`).join('')}<th style="text-align:right;color:var(--ok)">Total</th></tr></thead><tbody>`;
+    activeChatters.forEach(c=>{
+      let rt=0;
+      const cells=S.models.map(m=>{const key=`${c.id}_${m.id}_${today}`;const val=S.revenues[key]||'';rt+=parseFloat(val)||0;
+        return`<td style="text-align:right"><input type="number" class="rinput" value="${val}" placeholder="—" oninput="saveRevenue('${c.id}','${m.id}',this.value)"></td>`;}).join('');
+      html+=`<tr><td><div style="font-weight:700;font-size:13px">${c.name}</div></td>${cells}<td style="text-align:right;font-family:var(--font-mono);font-weight:800;color:var(--ok)">${moneyShort(rt)}</td></tr>`;
+    });
+    html+='<tr class="rtotalrow"><td>TOTAL</td>';
+    S.models.forEach(m=>{let ct=0;activeChatters.forEach(c=>{ct+=parseFloat(S.revenues[`${c.id}_${m.id}_${today}`])||0;});html+=`<td style="text-align:right">${moneyShort(ct)}</td>`;});
+    const activeTotal=activeChatters.reduce((sum,c)=>sum+S.models.reduce((s2,m)=>s2+(parseFloat(S.revenues[`${c.id}_${m.id}_${today}`])||0),0),0);
+    html+=`<td style="text-align:right">${moneyShort(activeTotal)}</td></tr></tbody></table></div>`;
+  }
+
+  if(restChatters.length){
+    html+=`<div style="margin-top:12px">
+      <button class="btn btn-line btn-sm btn-block" onclick="toggleRestChatters()">+ adicionar lançamento de outro chatter (${restChatters.length} não escalado${restChatters.length>1?'s':''} hoje)</button>
+      <div id="rest-chatters-panel" style="display:none;margin-top:8px">
+        ${restChatters.map(c=>`<button class="chip" style="margin:3px" onclick="forceAddToday('${c.id}')">+ ${c.name}</button>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  el.innerHTML=html;
+}
+function toggleRestChatters(){
+  const p=document.getElementById('rest-chatters-panel');
+  if(p)p.style.display=p.style.display==='none'?'block':'none';
+}
+function forceAddToday(chatterId){
+  // Manually mark as "in" today so they appear in the revenue table without affecting shift schedule
+  const today=todayKey();
+  if(!S.turnoLog[today])S.turnoLog[today]=[];
+  S.turnoLog[today].push({chatterId,action:'in',time:nowHHMM(),manualAdd:true});
+  save();renderRevenueTable();renderTurnoBoard();renderHome();
+  const c=S.chatters.find(ch=>ch.id===chatterId);
+  toast(`✅ ${c?c.name:'?'} adicionado ao lançamento de hoje`);
+}
+document.querySelectorAll('#v-fat .segtabs')[1].addEventListener('click',e=>{
+  const b=e.target.closest('.segtab');if(!b)return;
+  document.querySelectorAll('#v-fat .segtabs')[1].querySelectorAll('.segtab').forEach(x=>x.classList.remove('active'));b.classList.add('active');
+  renderReport(b.dataset.rep);
+});
+function renderReport(period){
+  const el=document.getElementById('report-body');
+  const wd=getWeekDates();const today=new Date();
+  if(period==='week'){
+    let total=0;wd.forEach(d=>S.chatters.forEach(c=>S.models.forEach(m=>{total+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(d)}`])||0;})));
+    el.innerHTML=`<div style="font-family:var(--font-mono);font-size:26px;font-weight:700;color:var(--ok);text-align:center;padding:6px 0">${money(total)}</div>
+    <div class="divider"></div><div class="sectionlb">por modelo</div>
+    ${S.models.map(m=>{let r=0;wd.forEach(d=>S.chatters.forEach(c=>{r+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(d)}`])||0;}));return`<div class="reprow"><div class="replb">${m.emoji} ${m.name}</div><div class="repval">${money(r)}</div></div>`;}).join('')}
+    <div class="divider"></div><div class="sectionlb">por chatter</div>
+    ${S.chatters.map(c=>`<div class="reprow"><div class="replb">${c.name}</div><div class="repval">${money(getChatterWeekRevenue(c.id))}</div></div>`).join('')}`;
+  } else {
+    const year=today.getFullYear(),month=today.getMonth();let total=0;
+    for(let d=1;d<=today.getDate();d++){const key=fmt(new Date(year,month,d));S.chatters.forEach(c=>S.models.forEach(m=>{total+=parseFloat(S.revenues[`${c.id}_${m.id}_${key}`])||0;}));}
+    el.innerHTML=`<div style="font-family:var(--font-mono);font-size:26px;font-weight:700;color:var(--ok);text-align:center;padding:6px 0">${money(total)}</div>
+    <div style="text-align:center;font-size:12px;color:var(--text2);margin-bottom:8px">${MONTHS[month]} ${year}</div>`;
+  }
+}
+function buildRevReport(){
+  const el=document.getElementById('revreport-body');
+  const wd=getWeekDates();let html='';
+  wd.forEach((d,i)=>{
+    const key=fmt(d);let dayTotal=0;
+    const breakdown=S.models.map(m=>{let mt=0;S.chatters.forEach(c=>{mt+=parseFloat(S.revenues[`${c.id}_${m.id}_${key}`])||0;});dayTotal+=mt;
+      return mt>0?`<div style="display:flex;justify-content:space-between;padding:3px 0 3px 10px"><span style="font-size:12px;color:var(--text2)">${m.emoji} ${m.name}</span><span style="font-family:var(--font-mono);font-size:12px">${money(mt)}</span></div>`:'';}).join('');
+    html+=`<div class="reprow" style="flex-direction:column;align-items:stretch"><div style="display:flex;justify-content:space-between"><span style="font-weight:700">${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'][i]} ${d.getDate()}/${d.getMonth()+1}</span><span style="font-family:var(--font-mono);font-weight:800;color:var(--ok)">${money(dayTotal)}</span></div>${breakdown}</div>`;
+  });
+  el.innerHTML=html||'<div class="empty"><div class="empty-tx">Nenhum lançamento</div></div>';
+}
+
+/* ===========================================================
+   CRUD
+   =========================================================== */
+function populateChatterSelects(){
+  ['shift-chatter','abs-chatter','orient-chatter','ot-chatter'].forEach(id=>{
+    const el=document.getElementById(id);if(!el)return;
+    el.innerHTML=S.chatters.length?S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join(''):'<option value="">Nenhum chatter</option>';
+  });
+}
+function saveModel(){
+  const name=document.getElementById('model-name').value.trim();if(!name){toast('⚠️ Nome obrigatório');return;}
+  S.models.push({id:'m'+Date.now(),name,emoji:document.getElementById('model-emoji').value.trim()||'🧩'});
+  save();closeModal('m-model');document.getElementById('model-name').value='';document.getElementById('model-emoji').value='';
+  toast('✅ Modelo adicionado!');renderFat();
+}
+function deleteModel(id){if(!confirm('Remover modelo?'))return;S.models=S.models.filter(m=>m.id!==id);save();toast('Removido');renderFat();}
+function saveChatter(){
+  const name=document.getElementById('ch-name').value.trim();if(!name){toast('⚠️ Nome obrigatório');return;}
+  S.chatters.push({id:'c'+Date.now(),name,discord:document.getElementById('ch-discord').value.trim(),level:document.getElementById('ch-level').value,notes:document.getElementById('ch-notes').value.trim(),watchtime:document.getElementById('ch-watchtime').value,createdAt:new Date().toISOString()});
+  save();closeModal('m-chatter');['ch-name','ch-discord','ch-notes','ch-watchtime'].forEach(id=>document.getElementById(id).value='');
+  toast('✅ Chatter adicionado!');renderTeam(teamFilter);renderHome();
+}
+function saveShift(){
+  const chatterId=document.getElementById('shift-chatter').value;
+  const start=document.getElementById('shift-start').value,end=document.getElementById('shift-end').value;
+  const days=Array.from(document.querySelectorAll('#m-shift .chip.sel')).map(c=>c.dataset.day);
+  if(!chatterId||!start||!end||!days.length){toast('⚠️ Preencha todos os campos');return;}
+  S.shifts.push({id:'s'+Date.now(),chatterId,start,end,days});save();
+  closeModal('m-shift');document.querySelectorAll('#m-shift .chip').forEach(c=>c.classList.remove('sel'));
+  toast('✅ Turno adicionado!');renderTurno();
+}
+function deleteShift(id){S.shifts=S.shifts.filter(s=>s.id!==id);save();renderScheduleForDay(selectedDay);renderAlarmList();toast('Removido');}
+function saveAbsence(){
+  const chatterId=document.getElementById('abs-chatter').value,type=document.getElementById('abs-type').value;
+  const date=document.getElementById('abs-date').value,note=document.getElementById('abs-note').value.trim();
+  if(!chatterId||!date){toast('⚠️ Preencha os campos');return;}
+  S.absences.push({id:'a'+Date.now(),chatterId,type,date,note});save();
+  closeModal('m-absence');document.getElementById('abs-date').value='';document.getElementById('abs-note').value='';
+  toast('✅ Registrado!');renderAbsenceList();renderHome();
+}
+function saveOrientation(){
+  const chatterId=document.getElementById('orient-chatter').value,text=document.getElementById('orient-text').value.trim();
+  if(!chatterId||!text){toast('⚠️ Preencha os campos');return;}
+  S.orientations.push({id:'o'+Date.now(),chatterId,text,shift:document.getElementById('orient-shift').value,goal:document.getElementById('orient-goal').value,date:todayKey()});
+  save();closeModal('m-orient');document.getElementById('orient-text').value='';document.getElementById('orient-goal').value='';
+  toast('✅ Orientação salva!');renderOrientList();
+}
+function deleteOrientation(id){S.orientations=S.orientations.filter(o=>o.id!==id);save();renderOrientList();toast('Removida');}
+function saveStudy(){
+  const title=document.getElementById('study-title').value.trim();if(!title){toast('⚠️ Título obrigatório');return;}
+  S.studies.push({id:'st'+Date.now(),title,category:document.getElementById('study-cat').value,priority:document.getElementById('study-prio').value,done:false});
+  save();closeModal('m-study');document.getElementById('study-title').value='';toast('✅ Adicionado!');renderStudyList();
+}
+function toggleStudy(id){const s=S.studies.find(st=>st.id===id);if(s){s.done=!s.done;save();renderStudyList();}}
+function deleteStudy(id){S.studies=S.studies.filter(s=>s.id!==id);save();renderStudyList();toast('Removido');}
+function saveRevenue(chatterId,modelId,value){S.revenues[`${chatterId}_${modelId}_${todayKey()}`]=parseFloat(value)||0;save();renderHome();}
+function saveOvertime(){
+  const chatterId=document.getElementById('ot-chatter').value;
+  const start=document.getElementById('ot-start').value,end=document.getElementById('ot-end').value;
+  const date=document.getElementById('ot-date').value,note=document.getElementById('ot-note').value.trim();
+  if(!chatterId||!start||!date){toast('⚠️ Preencha os campos');return;}
+  if(!S.turnoLog[date])S.turnoLog[date]=[];
+  S.turnoLog[date].push({chatterId,action:'overtime',time:start,otEnd:end,note});
+  save();closeModal('m-overtime');document.getElementById('ot-note').value='';
+  const c=S.chatters.find(ch=>ch.id===chatterId);
+  toast(`⏱ Hora extra de ${c?c.name:'?'} registrada!`);renderTurnoBoard();renderHome();
+}
+
+// ---------- data helpers ----------
+function getTodayTotalRevenue(){const today=todayKey();let t=0;S.chatters.forEach(c=>S.models.forEach(m=>{t+=parseFloat(S.revenues[`${c.id}_${m.id}_${today}`])||0;}));return t;}
+function getChatterWeekRevenue(id){let t=0;getWeekDates().forEach(d=>S.models.forEach(m=>{t+=parseFloat(S.revenues[`${id}_${m.id}_${fmt(d)}`])||0;}));return t;}
+function getWeekAbsencesData(){const now=new Date();return S.absences.filter(a=>{const d=new Date(a.date);return(now-d)/864e5<7&&d<=now;});}
+
+// ---------- chips ----------
+document.querySelectorAll('.chip').forEach(chip=>chip.addEventListener('click',()=>chip.classList.toggle('sel')));
+
+// ---------- INIT ----------
+load();
+initFirebase();
+document.getElementById('abs-date').value=todayKey();
+
+if(!S.studies.length){
+  S.studies=[
+    {id:'st1',title:'Liderança Situacional — adaptar estilo ao nível do liderado',category:'liderança',priority:'alta',done:false},
+    {id:'st2',title:'Feedback eficaz: SBI (Situação, Comportamento, Impacto)',category:'comunicacao',priority:'alta',done:false},
+    {id:'st3',title:'Preparar treinamento: técnicas de retenção para chatters júniores',category:'treinamento',priority:'media',done:false},
+    {id:'st4',title:'Gestão de tempo: matriz de Eisenhower',category:'gestao',priority:'media',done:false},
+    {id:'st5',title:'Técnicas de vendas conversacionais',category:'vendas',priority:'alta',done:false},
+  ];save();
+}
+
+updateClock();setInterval(updateClock,1000);
+renderHome();
+
+</script>
+</body>
+</html>
