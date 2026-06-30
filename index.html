@@ -7,8 +7,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#FFFFFF">
 <title>GestorPro</title>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
 <style>
 /* ============================================================
    GestorPro — clean design tokens
@@ -473,6 +473,14 @@ body{
   </div>
 
   <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">Quem trabalhou hoje</div><div class="panel-note">Escalados + quem marcou entrada, com histórico de ponto</div></div>
+      <span class="pill pill-info" id="today-worked-badge">0 hoje</span>
+    </div>
+    <div id="today-worked-list"></div>
+  </div>
+
+  <div class="panel">
     <div class="panel-head"><div class="panel-title">Escala semanal</div></div>
     <div class="segtabs" id="day-tabs">
       <button class="segtab active" data-day="seg">Seg</button>
@@ -597,6 +605,21 @@ body{
   </div>
 
   <div class="panel">
+    <div class="panel-head"><div><div class="panel-title">📅 Diário por Modelo</div><div class="panel-note">Faturamento dia a dia, semana atual</div></div></div>
+    <div id="daily-by-model"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><div><div class="panel-title">📅 Diário por Chatter</div><div class="panel-note">Faturamento dia a dia, semana atual</div></div></div>
+    <div id="daily-by-chatter"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><div><div class="panel-title">🎯 Metas da Semana</div><div class="panel-note">Defina a meta de cada chatter e acompanhe o progresso</div></div></div>
+    <div id="chatter-goals-list"></div>
+  </div>
+
+  <div class="panel">
     <div class="panel-head"><div class="panel-title">Relatórios</div></div>
     <div class="segtabs" id="report-period-tabs">
       <button class="segtab active" data-rep="week">Semana</button>
@@ -628,7 +651,8 @@ body{
 </div></div>
 
 <div class="modalbg" id="m-shift"><div class="modal">
-  <div class="modal-handle"></div><div class="modal-title">Escalar chatter</div>
+  <div class="modal-handle"></div><div class="modal-title" id="shift-modal-title">Escalar chatter</div>
+  <input type="hidden" id="shift-edit-id" value="">
   <div class="field"><label class="flabel">Chatter</label><select class="fselect" id="shift-chatter"></select></div>
   <div class="fgrid2">
     <div class="field"><label class="flabel">Entrada</label><input type="time" class="finput" id="shift-start"></div>
@@ -641,6 +665,10 @@ body{
       <button class="chip" data-day="sex">Sex</button><button class="chip" data-day="sab">Sáb</button>
       <button class="chip" data-day="dom">Dom</button>
     </div>
+  </div>
+  <div class="field"><label class="flabel">Modelos atendidas nesse turno</label>
+    <div class="chiprow" id="shift-model-chips"></div>
+    <div style="font-size:11px;color:var(--text3);margin-top:6px" id="shift-model-empty-note"></div>
   </div>
   <div class="modalbtns"><button class="btn btn-ghost btn-block" onclick="closeModal('m-shift')">Cancelar</button><button class="btn btn-primary btn-block" onclick="saveShift()">Salvar</button></div>
 </div></div>
@@ -724,6 +752,17 @@ body{
   <div class="modalbtns"><button class="btn btn-ghost btn-block" onclick="closeModal('m-checkin')">Cancelar</button><button class="btn btn-primary btn-block" id="checkin-confirm">Confirmar</button></div>
 </div></div>
 
+<div class="modalbg" id="m-punch-edit"><div class="modal">
+  <div class="modal-handle"></div><div class="modal-title" id="punch-edit-title">Editar horário</div>
+  <div style="font-size:11.5px;color:var(--text3);margin-bottom:12px" id="punch-edit-date"></div>
+  <div class="field"><label class="flabel">Horário</label><input type="time" class="finput" id="punch-edit-time"></div>
+  <div class="field" id="punch-edit-otend-field" style="display:none"><label class="flabel">Fim da hora extra</label><input type="time" class="finput" id="punch-edit-otend"></div>
+  <div class="modalbtns">
+    <button class="btn btn-danger" id="punch-edit-delete" style="flex:1">Remover</button>
+    <button class="btn btn-primary" id="punch-edit-confirm" style="flex:2">Salvar</button>
+  </div>
+</div></div>
+
 <div class="modalbg" id="m-revreport"><div class="modal">
   <div class="modal-handle"></div><div class="modal-title">Relatório semanal</div>
   <div id="revreport-body"></div>
@@ -798,7 +837,34 @@ let fbSyncStatus='connecting'; // connecting | online | offline | error
 let fbIgnoreNextSnapshot=false; // true right after we push our own write, to avoid stomping local edits with the echo
 let fbHasReceivedFirstSnapshot=false;
 
+let fbLastErrorMessage='';
+let fbInitAttempts=0;
+
+function initFirebaseWithRetry(){
+  // The CDN <script> tags are placed in <head> and should finish before this
+  // inline script runs, but on very slow connections there's a small chance
+  // `firebase` isn't defined yet. Retry a few times before giving up.
+  if(typeof firebase==='undefined'&&fbInitAttempts<10){
+    fbInitAttempts++;
+    fbSyncStatus='connecting';
+    updateSyncBadge();
+    setTimeout(initFirebaseWithRetry,400);
+    return;
+  }
+  initFirebase();
+}
+
 function initFirebase(){
+  // The CDN script tags load the global `firebase` object. If the script
+  // failed to load (network blocked, wrong URL, ad blocker, etc.), `firebase`
+  // won't exist — catching that here gives a clear message instead of a
+  // silent "connecting..." that never resolves.
+  if(typeof firebase==='undefined'){
+    fbSyncStatus='error';
+    fbLastErrorMessage='SDK do Firebase não carregou (verifique conexão com a internet)';
+    updateSyncBadge();
+    return;
+  }
   try{
     const firebaseConfig={
       apiKey:"AIzaSyA5Q5MYehtJAU18ixZLvqS4-gQnNJJD3LI",
@@ -808,13 +874,15 @@ function initFirebase(){
       messagingSenderId:"232929088781",
       appId:"1:232929088781:web:b278bd92bf9bdc857e4c44"
     };
-    const app=firebase.initializeApp(firebaseConfig);
+    // Avoid "Firebase App already exists" if initFirebase ever runs twice
+    const app=firebase.apps&&firebase.apps.length?firebase.app():firebase.initializeApp(firebaseConfig);
     fbDb=firebase.firestore();
     fbReady=true;
     listenToFirestore();
   }catch(e){
     console.error('Firebase init failed',e);
     fbSyncStatus='error';
+    fbLastErrorMessage=(e&&e.message)?e.message:'Erro desconhecido ao iniciar';
     updateSyncBadge();
   }
 }
@@ -840,7 +908,16 @@ function listenToFirestore(){
             const parsed=JSON.parse(remote.payload);
             S={...S,...parsed};
             try{localStorage.setItem(DB,JSON.stringify(S));}catch(e){}
-            renderView(currentViewName());
+            // If the person is mid-typing in a text field, don't yank the
+            // screen out from under them — re-render once they blur instead.
+            const active=document.activeElement;
+            const isTyping=active&&(active.tagName==='INPUT'||active.tagName==='TEXTAREA'||active.tagName==='SELECT');
+            if(isTyping){
+              const rerenderOnBlur=()=>{renderView(currentViewName());active.removeEventListener('blur',rerenderOnBlur);};
+              active.addEventListener('blur',rerenderOnBlur,{once:true});
+            } else {
+              renderView(currentViewName());
+            }
           }catch(e){/* ignore parse errors */}
         }
       } else if(!fbHasReceivedFirstSnapshot){
@@ -854,6 +931,7 @@ function listenToFirestore(){
     (err)=>{
       console.error('Firestore listen error',err);
       fbSyncStatus='offline';
+      fbLastErrorMessage=(err&&err.code)?`${err.code}: ${err.message||''}`:'Erro ao escutar atualizações';
       updateSyncBadge();
     }
   );
@@ -870,7 +948,9 @@ function pushToFirestore(){
   }).catch((err)=>{
     console.error('Firestore write error',err);
     fbIgnoreNextSnapshot=false;
-    fbSyncStatus='offline';updateSyncBadge();
+    fbSyncStatus='offline';
+    fbLastErrorMessage=(err&&err.code)?`${err.code}: ${err.message||''}`:'Erro ao salvar';
+    updateSyncBadge();
   });
 }
 
@@ -886,6 +966,17 @@ function updateSyncBadge(){
   const s=map[fbSyncStatus]||map.connecting;
   el.textContent=s.txt;
   el.className='pill '+s.cls;
+  el.style.cursor='pointer';
+  el.onclick=function(){
+    if(fbSyncStatus==='online'){
+      toast('☁ Dados sincronizando normalmente');
+    } else if(fbLastErrorMessage){
+      toast('⚠ '+fbLastErrorMessage,5000);
+    } else {
+      toast('Tentando reconectar...');
+      initFirebase();
+    }
+  };
 }
 function currentViewName(){
   const active=document.querySelector('.view.active');
@@ -906,8 +997,11 @@ let S={
   midnightTasks:{},     // date -> [{id, chatterId, label, done}]
   dailyTasks:{},        // date -> [{id, text, prio, done}]
   weekGoals:{},         // weekKey -> [{id, text, type, target, current, done}]
+  chatterWeekGoals:{},  // weekKey -> {chatterId: targetValue}
   weekNotes:{},         // weekKey -> text
-  watchAlerts:{}        // date -> {chatterId: 'pending'|'confirmed'|'missed'}
+  watchAlerts:{},       // date -> {chatterId: 'pending'|'confirmed'|'missed'}
+  chatterTrainings:[],  // [{id, chatterId, title, done, createdAt}]
+  hasSeededStudies:false // tracks whether default study items were already injected once, so deleting them all doesn't bring them back
 };
 
 /* ===========================================================
@@ -1031,11 +1125,38 @@ document.querySelectorAll('.toptab,.navbtn').forEach(el=>el.addEventListener('cl
 function openModal(id){
   document.getElementById(id).classList.add('open');
   if(['m-shift','m-absence','m-orient','m-overtime'].includes(id))populateChatterSelects();
+  if(id==='m-shift'){
+    populateShiftModelChips();
+    if(!document.getElementById('shift-edit-id').value){
+      document.getElementById('shift-modal-title').textContent='Escalar chatter';
+      document.getElementById('shift-start').value='';
+      document.getElementById('shift-end').value='';
+      document.querySelectorAll('#m-shift .chip').forEach(c=>c.classList.remove('sel'));
+    }
+  }
   if(id==='m-overtime'){document.getElementById('ot-date').value=todayKey();document.getElementById('ot-start').value=nowHHMM();}
   if(id==='m-revreport')buildRevReport();
   if(id==='m-goal'){document.getElementById('goal-text').value='';document.getElementById('goal-target').value='';}
 }
-function closeModal(id){document.getElementById(id).classList.remove('open');}
+function populateShiftModelChips(){
+  const el=document.getElementById('shift-model-chips');
+  const note=document.getElementById('shift-model-empty-note');
+  if(!S.models.length){
+    el.innerHTML='';
+    note.textContent='Nenhum modelo cadastrado ainda — cadastre na aba Faturamento.';
+    return;
+  }
+  note.textContent='';
+  el.innerHTML=S.models.map(m=>`<button class="chip" data-model="${m.id}">${m.emoji||'🧩'} ${m.name}</button>`).join('');
+  el.querySelectorAll('.chip').forEach(chip=>chip.addEventListener('click',()=>chip.classList.toggle('sel')));
+}
+function closeModal(id){
+  document.getElementById(id).classList.remove('open');
+  if(id==='m-shift'){
+    document.getElementById('shift-edit-id').value='';
+    document.getElementById('shift-modal-title').textContent='Escalar chatter';
+  }
+}
 document.querySelectorAll('.modalbg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
 function toggleGoalTarget(){
   const t=document.getElementById('goal-type').value;
@@ -1077,11 +1198,17 @@ let watchFiredToday=new Set(); // chatterIds already alerted today (in-memory, r
 
 function checkLoginWatch(){
   const today=todayKey();
-  const hhmm=nowHHMM();
+  const now=new Date();
+  const nowMinutes=now.getHours()*60+now.getMinutes();
   if(!S.watchAlerts[today])S.watchAlerts[today]={};
   S.chatters.forEach(c=>{
     if(!c.watchtime)return;
-    if(c.watchtime===hhmm){
+    const[wh,wm]=c.watchtime.split(':').map(Number);
+    const watchMinutes=wh*60+wm;
+    // Fire if we're at or up to 10 minutes past the configured time — covers
+    // the case where the app wasn't open at the exact minute the alarm was due.
+    const withinWindow=nowMinutes>=watchMinutes&&nowMinutes<=watchMinutes+10;
+    if(withinWindow){
       const already=S.watchAlerts[today][c.id];
       if(!already){
         S.watchAlerts[today][c.id]='pending';
@@ -1286,11 +1413,13 @@ function getChattersThatWorkedOn(dateKey){
   return Array.from(ids).filter(id=>S.chatters.find(c=>c.id===id));
 }
 function checkMidnightGeneration(){
+  // Generate retroactively for yesterday and today regardless of what time
+  // the app happens to be open — generateMidnightTasks() is itself a no-op
+  // if tasks already exist for that date, so this is safe to call every tick.
   const now=new Date();
-  if(now.getHours()===0&&now.getMinutes()<5){
-    const yest=new Date(now);yest.setDate(yest.getDate()-1);
-    generateMidnightTasks(fmt(yest));
-  }
+  const yest=new Date(now);yest.setDate(yest.getDate()-1);
+  generateMidnightTasks(fmt(yest));
+  generateMidnightTasks(fmt(now));
 }
 function renderMidnightPreviewHome(){
   const yest=new Date();yest.setDate(yest.getDate()-1);
@@ -1387,12 +1516,89 @@ function getChatterOvertimeOn(chatterId,dateKey){
 let selectedDay='seg';
 function renderTurno(){
   document.getElementById('turno-sub').textContent='Hoje · '+todayKey();
-  renderTurnoBoard();renderScheduleForDay(selectedDay);renderAlarmList();renderAbsenceList();
+  renderTurnoBoard();renderScheduleForDay(selectedDay);renderAlarmList();renderAbsenceList();renderTodayWorkedList();
+}
+/* ===========================================================
+   EDIT PUNCH — correct a check-in/out/overtime time that was
+   recorded automatically but doesn't match what really happened
+   (chatters often clock in/out at slightly different times).
+   =========================================================== */
+function openEditPunch(dateKey,entryId){
+  const entry=(S.turnoLog[dateKey]||[]).find(e=>e.id===entryId);
+  if(!entry)return;
+  const c=S.chatters.find(ch=>ch.id===entry.chatterId);
+  const actLabel={in:'Entrada',out:'Saída',overtime:'Hora extra'}[entry.action]||entry.action;
+  document.getElementById('punch-edit-title').textContent=`Editar ${actLabel.toLowerCase()} — ${c?c.name:'?'}`;
+  document.getElementById('punch-edit-date').textContent=dateKey;
+  document.getElementById('punch-edit-time').value=entry.time||'';
+  document.getElementById('punch-edit-otend-field').style.display=entry.action==='overtime'?'block':'none';
+  document.getElementById('punch-edit-otend').value=entry.otEnd||'';
+  document.getElementById('punch-edit-confirm').onclick=function(){
+    const newTime=document.getElementById('punch-edit-time').value;
+    if(!newTime){toast('⚠️ Informe um horário');return;}
+    entry.time=newTime;
+    if(entry.action==='overtime'){
+      entry.otEnd=document.getElementById('punch-edit-otend').value||entry.otEnd;
+    }
+    save();
+    closeModal('m-punch-edit');
+    toast('✅ Horário corrigido!');
+    renderTodayWorkedList();renderTurnoBoard();renderHome();
+  };
+  document.getElementById('punch-edit-delete').onclick=function(){
+    if(!confirm('Remover esse registro de ponto?'))return;
+    S.turnoLog[dateKey]=(S.turnoLog[dateKey]||[]).filter(e=>e.id!==entryId);
+    save();
+    closeModal('m-punch-edit');
+    toast('Registro removido');
+    renderTodayWorkedList();renderTurnoBoard();renderHome();
+  };
+  openModal('m-punch-edit');
+}
+
+function renderTodayWorkedList(){
+  const el=document.getElementById('today-worked-list');
+  if(!el)return;
+  const today=todayKey();
+  const workedIds=new Set(getChattersThatWorkedOn(today));
+  const chatters=S.chatters.filter(c=>workedIds.has(c.id));
+  const badge=document.getElementById('today-worked-badge');
+  if(badge)badge.textContent=`${chatters.length} hoje`;
+
+  if(!chatters.length){
+    el.innerHTML='<div class="empty"><div class="empty-tx">Nenhum chatter escalado ou com entrada registrada hoje</div></div>';
+    return;
+  }
+  el.innerHTML='<div class="roster">'+chatters.map(c=>{
+    const color=getComputedLevelColor(c.level);
+    const status=getChatterStatus(c.id,today);
+    const log=(S.turnoLog[today]||[]).filter(e=>e.chatterId===c.id);
+    const todaysShifts=S.shifts.filter(s=>s.chatterId===c.id&&s.days&&s.days.includes(getTodayDayKey())).sort((a,b)=>a.start.localeCompare(b.start));
+    const shiftsLabel=todaysShifts.length?todaysShifts.map(s=>`${s.start}–${s.end}`).join(' · '):'';
+    const allModelIds=new Set();
+    todaysShifts.forEach(s=>(s.modelIds||[]).forEach(mid=>allModelIds.add(mid)));
+    const modelNames=Array.from(allModelIds).map(mid=>{const m=S.models.find(mm=>mm.id===mid);return m?`${m.emoji||'🧩'} ${m.name}`:null;}).filter(Boolean);
+    const historyChips=log.length?log.map(e=>{
+      const actLabel=e.action==='in'?'entrou':e.action==='out'?'saiu':'h.extra';
+      return`<span class="pill pill-flat" style="cursor:pointer;margin:2px 3px 2px 0" onclick="openEditPunch('${today}','${e.id}')">${actLabel} ${e.time} ✎</span>`;
+    }).join(''):'<span style="font-size:11.5px;color:var(--text3)">sem registro de ponto ainda</span>';
+    return`<div class="rrow ${status==='online'?'on':status==='overtime'?'ot':'off'}">
+      <div class="ravatar" style="background:${color}22;color:${color}">${c.name.slice(0,2).toUpperCase()}</div>
+      <div class="rinfo">
+        <div class="rname">${c.name}</div>
+        <div class="rmeta">${shiftsLabel?`previsto: ${shiftsLabel}`:'sem horário fixo'}</div>
+        ${modelNames.length?`<div class="rmeta" style="margin-top:2px">🧩 ${modelNames.join(' · ')}</div>`:''}
+        <div style="margin-top:4px">${historyChips}</div>
+      </div>
+      <span class="pill ${status==='online'?'pill-ok':status==='overtime'?'pill-warn':'pill-flat'}">${status==='online'?'online':status==='overtime'?'h.extra':'offline'}</span>
+    </div>`;
+  }).join('')+'</div>';
 }
 function renderTurnoBoard(){
   const el=document.getElementById('turno-board');
   if(!S.chatters.length){el.innerHTML='<div class="empty"><div class="empty-tx">Cadastre chatters na aba Equipe</div></div>';return;}
   const today=todayKey();
+  const todayDayKey=getTodayDayKey();
   el.innerHTML='<div class="roster">'+S.chatters.map(c=>{
     const status=getChatterStatus(c.id,today);
     const color=getComputedLevelColor(c.level);
@@ -1400,14 +1606,16 @@ function renderTurnoBoard(){
     const last=log.length?log[log.length-1]:null;
     const since=last&&last.action==='in'?` · desde ${last.time}`:'';
     const otMins=getChatterOvertimeOn(c.id,today);
+    const todaysShifts=S.shifts.filter(s=>s.chatterId===c.id&&s.days&&s.days.includes(todayDayKey)).sort((a,b)=>a.start.localeCompare(b.start));
+    const shiftsLabel=todaysShifts.length?todaysShifts.map(s=>`${s.start}-${s.end}`).join(' · '):'';
     let actions='';
     if(status==='offline')actions=`<button class="btn btn-primary btn-xs" onclick="doCheckin('${c.id}','in')">▶ entrou</button>`;
     else if(status==='online')actions=`<button class="btn btn-danger btn-xs" onclick="doCheckin('${c.id}','out')">■ saiu</button><button class="btn btn-soft btn-xs" onclick="doCheckin('${c.id}','overtime')">⏱</button>`;
     else if(status==='overtime')actions=`<button class="btn btn-danger btn-xs" onclick="doCheckin('${c.id}','out')">■ saiu</button>`;
     return`<div class="rrow ${status==='online'?'on':status==='overtime'?'ot':'off'}">
       <div class="ravatar" style="background:${color}22;color:${color}">${c.name.slice(0,2).toUpperCase()}</div>
-      <div class="rinfo"><div class="rname">${c.name}</div>
-      <div class="rmeta">${status==='online'?'online'+since:status==='overtime'?'hora extra':'offline'}${otMins>0?` · +${otMins}min`:''}</div></div>
+      <div class="rinfo"><div class="rname">${c.name}${todaysShifts.length>1?' <span class="pill pill-info" style="font-size:9px">2 turnos</span>':''}</div>
+      <div class="rmeta">${status==='online'?'online'+since:status==='overtime'?'hora extra':'offline'}${otMins>0?` · +${otMins}min`:''}${shiftsLabel?` · prev: ${shiftsLabel}`:''}</div></div>
       <div class="ractions">${actions}</div>
     </div>`;
   }).join('')+'</div>';
@@ -1423,7 +1631,7 @@ function doCheckin(chatterId,action){
     openModal('m-overtime');return;
   }
   if(action==='out'){openCheckinOut(chatterId);return;}
-  S.turnoLog[today].push({chatterId,action:'in',time:nowHHMM()});
+  S.turnoLog[today].push({id:'tl'+Date.now()+Math.random().toString(36).slice(2,6),chatterId,action:'in',time:nowHHMM()});
   save();toast(`✅ ${c.name} marcado como online`);renderTurnoBoard();renderHome();
 }
 function openCheckinOut(chatterId){
@@ -1450,9 +1658,9 @@ function openCheckinOut(chatterId){
   };
   document.getElementById('checkin-confirm').onclick=function(){
     const today=todayKey();if(!S.turnoLog[today])S.turnoLog[today]=[];
-    S.turnoLog[today].push({chatterId,action:'out',time:nowHHMM()});
+    S.turnoLog[today].push({id:'tl'+Date.now()+Math.random().toString(36).slice(2,6),chatterId,action:'out',time:nowHHMM()});
     if(rep&&rep!=='none'){
-      S.turnoLog[today].push({chatterId:rep,action:'in',time:nowHHMM()});
+      S.turnoLog[today].push({id:'tl'+Date.now()+Math.random().toString(36).slice(2,6),chatterId:rep,action:'in',time:nowHHMM()});
       const r=S.chatters.find(ch=>ch.id===rep);
       toast(`✅ ${c.name} saiu · ${r?r.name:'?'} entrou`);
     } else toast(`✅ ${c.name} saiu`);
@@ -1464,13 +1672,40 @@ function renderScheduleForDay(day){
   const list=document.getElementById('schedule-list');
   const shifts=S.shifts.filter(s=>s.days&&s.days.includes(day));
   if(!shifts.length){list.innerHTML='<div class="empty"><div class="empty-tx">Nenhum turno cadastrado</div></div>';return;}
-  list.innerHTML='<div style="display:flex;flex-direction:column;gap:8px">'+shifts.sort((a,b)=>a.start.localeCompare(b.start)).map(s=>{
-    const c=S.chatters.find(ch=>ch.id===s.chatterId);if(!c)return'';
+
+  // Group shifts by chatter so someone with 2+ time blocks on the same day shows as one card
+  const byChatter={};
+  shifts.forEach(s=>{
+    if(!byChatter[s.chatterId])byChatter[s.chatterId]=[];
+    byChatter[s.chatterId].push(s);
+  });
+
+  const groups=Object.entries(byChatter).map(([chatterId,list])=>{
+    const c=S.chatters.find(ch=>ch.id===chatterId);
+    const earliest=list.slice().sort((a,b)=>a.start.localeCompare(b.start))[0];
+    return{chatterId,chatter:c,shifts:list.sort((a,b)=>a.start.localeCompare(b.start)),sortKey:earliest?earliest.start:'99:99'};
+  }).filter(g=>g.chatter).sort((a,b)=>a.sortKey.localeCompare(b.sortKey));
+
+  list.innerHTML='<div style="display:flex;flex-direction:column;gap:8px">'+groups.map(g=>{
+    const c=g.chatter;
     const color=getComputedLevelColor(c.level);
-    return`<div class="rrow">
-      <div style="font-family:var(--font-mono);background:var(--bg-soft);border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;color:var(--warn);text-align:center;min-width:70px">${s.start}<br><span style="font-size:9px;color:var(--text3)">até</span><br>${s.end}</div>
-      <div class="rinfo"><div class="rname">${c.name}</div><span class="pill ${LVLCLASS[c.level]}" style="border:1px solid;margin-top:4px">${c.level}</span></div>
-      <button class="btn btn-icon btn-line" onclick="deleteShift('${s.id}')">✕</button>
+    const multi=g.shifts.length>1;
+    const timeBlocks=g.shifts.map(s=>{
+      const modelNames=(s.modelIds||[]).map(mid=>{const m=S.models.find(mm=>mm.id===mid);return m?`${m.emoji||'🧩'} ${m.name}`:null;}).filter(Boolean);
+      return`
+      <div>
+        <div style="display:inline-flex;align-items:center;gap:5px">
+          <div style="font-family:var(--font-mono);background:var(--bg-soft);border-radius:7px;padding:5px 9px;font-size:11.5px;font-weight:700;color:var(--warn);white-space:nowrap;cursor:pointer" onclick="openEditShift('${s.id}')">${s.start}–${s.end} ✎</div>
+          <button class="btn btn-icon btn-line" style="width:22px;height:22px;flex-shrink:0" onclick="deleteShift('${s.id}')">✕</button>
+        </div>
+        ${modelNames.length?`<div style="font-size:10.5px;color:var(--text3);margin-top:3px">${modelNames.join(' · ')}</div>`:''}
+      </div>`;}).join('');
+    return`<div class="rrow" style="align-items:flex-start">
+      <div style="display:flex;flex-wrap:wrap;gap:8px;max-width:160px">${timeBlocks}</div>
+      <div class="rinfo">
+        <div class="rname">${c.name}${multi?` <span class="pill pill-info" style="margin-left:5px;font-size:9.5px">2 turnos</span>`:''}</div>
+        <span class="pill ${LVLCLASS[c.level]}" style="border:1px solid;margin-top:4px">${c.level}</span>
+      </div>
     </div>`;
   }).join('')+'</div>';
 }
@@ -1680,10 +1915,13 @@ function renderTeam(filter){
 function openChatterDetail(id){
   const c=S.chatters.find(ch=>ch.id===id);if(!c)return;
   const color=getComputedLevelColor(c.level);
-  const orients=S.orientations.filter(o=>o.chatterId===id).slice(-5).reverse();
+  const orients=S.orientations.filter(o=>o.chatterId===id).slice(-8).reverse();
+  const absencesAll=S.absences.filter(a=>a.chatterId===id).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,10);
   const revWeek=getChatterWeekRevenue(id);
   const today=todayKey();
   const weekDates=getWeekDates();let weekOT=0;weekDates.forEach(d=>weekOT+=getChatterOvertimeOn(id,fmt(d)));
+  const monthlyGoals=getChatterMonthlyGoalHistory(id);
+
   const revRows=S.models.map(m=>{
     const key=`${id}_${m.id}_${today}`;const val=S.revenues[key]||'';
     return`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
@@ -1692,6 +1930,24 @@ function openChatterDetail(id){
       <input type="number" class="finput" style="width:84px;text-align:right;padding:6px 8px;font-size:13px;font-family:var(--font-mono)" value="${val}" placeholder="0" oninput="saveRevenue('${id}','${m.id}',this.value)"></div>
     </div>`;
   }).join('');
+
+  const tb={falta:'pill-bad',atraso:'pill-warn',saida_antecipada:'pill-info'};
+  const tl={falta:'Falta',atraso:'Atraso',saida_antecipada:'Saída antecip.'};
+  const absencesHtml=absencesAll.length?absencesAll.map(a=>`
+    <div class="reprow">
+      <div><div class="replb">${a.date}</div>${a.note?`<div style="font-size:11px;color:var(--text3)">${a.note}</div>`:''}</div>
+      <span class="pill ${tb[a.type]||'pill-flat'}">${tl[a.type]||a.type}</span>
+    </div>`).join(''):'<div style="font-size:12px;color:var(--text3)">Nenhuma ocorrência registrada</div>';
+
+  const monthlyGoalsHtml=monthlyGoals.length?monthlyGoals.map(g=>`
+    <div class="reprow">
+      <div class="replb">Semana de ${g.weekStart}</div>
+      <div style="text-align:right">
+        <span class="pill ${g.met?'pill-ok':'pill-bad'}">${g.met?'✓ bateu':'✕ não bateu'}</span>
+        <div style="font-family:var(--font-mono);font-size:11px;color:var(--text3);margin-top:2px">${money(g.achieved)} / ${money(g.target)}</div>
+      </div>
+    </div>`).join(''):'<div style="font-size:12px;color:var(--text3)">Nenhuma meta definida este mês</div>';
+
   document.getElementById('chatter-detail-body').innerHTML=`
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
       <div class="ravatar" style="width:50px;height:50px;font-size:19px;background:${color}22;color:${color}">${c.name.slice(0,2).toUpperCase()}</div>
@@ -1716,13 +1972,32 @@ function openChatterDetail(id){
       <input type="time" class="finput" id="dl-watch-${id}" value="${c.watchtime||''}">
     </div>
     <div class="field"><label class="flabel">Mapeamento / notas</label><textarea class="ftext" id="dl-notes-${id}">${c.notes||''}</textarea></div>
-    <button class="btn btn-amber btn-block" style="margin-bottom:12px" onclick="saveChatterDetail('${id}')">Salvar alterações</button>
+    <button class="btn btn-primary btn-block" style="margin-bottom:12px" onclick="saveChatterDetail('${id}')">Salvar alterações</button>
+
     <div class="divider"></div>
-    <div class="sectionlb">últimas orientações</div>
-    ${orients.length?orients.map(o=>`<div class="logitem"><div class="logdate">${o.date} · ${o.shift||''}</div><div class="logtext">${o.text}</div></div>`).join(''):'<div style="color:var(--text3);font-size:13px">Nenhuma orientação</div>'}
-    <button class="btn btn-danger btn-block" style="margin-top:12px" onclick="deleteChatter('${id}')">Remover chatter</button>
+    <div class="sectionlb">🎯 orientações recentes</div>
+    ${orients.length?orients.map(o=>`<div class="logitem"><div class="logdate">${o.date} · ${o.shift||''}</div><div class="logtext">${o.text}</div>${o.goal?`<div style="margin-top:4px;font-family:var(--font-mono);font-size:11.5px;color:var(--ok)">meta do dia: ${money(parseFloat(o.goal))}</div>`:''}</div>`).join(''):'<div style="color:var(--text3);font-size:13px">Nenhuma orientação</div>'}
+
+    <div class="divider"></div>
+    <div class="sectionlb">📚 treinamentos pendentes / feitos</div>
+    <div id="training-list-${id}" style="margin-bottom:8px"></div>
+    <div style="display:flex;gap:6px">
+      <input class="finput" id="new-training-${id}" placeholder="Novo treinamento..." style="flex:1">
+      <button class="btn btn-primary btn-sm" onclick="addChatterTraining('${id}')">+</button>
+    </div>
+
+    <div class="divider"></div>
+    <div class="sectionlb">📊 faltas e atrasos</div>
+    ${absencesHtml}
+
+    <div class="divider"></div>
+    <div class="sectionlb">🎯 metas do mês</div>
+    ${monthlyGoalsHtml}
+
+    <button class="btn btn-danger btn-block" style="margin-top:14px" onclick="deleteChatter('${id}')">Remover chatter</button>
   `;
   openModal('m-chatter-detail');
+  refreshChatterDetailTrainings(id);
 }
 function saveChatterDetail(id){
   const c=S.chatters.find(ch=>ch.id===id);if(!c)return;
@@ -1732,15 +2007,77 @@ function saveChatterDetail(id){
   save();toast('✅ Atualizado!');renderTeam(teamFilter);
 }
 function deleteChatter(id){
-  if(!confirm('Remover chatter?'))return;
-  S.chatters=S.chatters.filter(c=>c.id!==id);S.shifts=S.shifts.filter(s=>s.chatterId!==id);
-  save();closeModal('m-chatter-detail');toast('Removido');renderTeam(teamFilter);
+  if(!confirm('Remover chatter? Isso também apaga faltas, orientações, treinamentos e histórico de ponto dele.'))return;
+  S.chatters=S.chatters.filter(c=>c.id!==id);
+  S.shifts=S.shifts.filter(s=>s.chatterId!==id);
+  S.absences=S.absences.filter(a=>a.chatterId!==id);
+  S.orientations=S.orientations.filter(o=>o.chatterId!==id);
+  S.chatterTrainings=S.chatterTrainings.filter(t=>t.chatterId!==id);
+  Object.keys(S.turnoLog).forEach(dateKey=>{
+    S.turnoLog[dateKey]=S.turnoLog[dateKey].filter(e=>e.chatterId!==id);
+  });
+  Object.keys(S.midnightTasks).forEach(dateKey=>{
+    S.midnightTasks[dateKey]=S.midnightTasks[dateKey].filter(t=>t.chatterId!==id);
+  });
+  Object.keys(S.chatterWeekGoals).forEach(wkey=>{
+    delete S.chatterWeekGoals[wkey][id];
+  });
+  Object.keys(S.watchAlerts).forEach(dateKey=>{
+    delete S.watchAlerts[dateKey][id];
+  });
+  Object.keys(S.revenues).forEach(key=>{
+    if(key.startsWith(id+'_'))delete S.revenues[key];
+  });
+  save();closeModal('m-chatter-detail');toast('Chatter e histórico removidos');renderTeam(teamFilter);
+}
+
+/* ===========================================================
+   CHATTER TRAININGS — pending/done list per chatter, separate
+   from free-text notes, so the manager can track concrete
+   to-dos for each person's development.
+   =========================================================== */
+function addChatterTraining(chatterId){
+  const input=document.getElementById('new-training-'+chatterId);
+  const title=input.value.trim();
+  if(!title){toast('⚠️ Descreva o treinamento');return;}
+  S.chatterTrainings.push({id:'tr'+Date.now(),chatterId,title,done:false,createdAt:todayKey()});
+  save();
+  input.value='';
+  toast('✅ Treinamento adicionado!');
+  refreshChatterDetailTrainings(chatterId);
+}
+function toggleChatterTraining(trainingId,chatterId){
+  const t=S.chatterTrainings.find(x=>x.id===trainingId);
+  if(t){t.done=!t.done;save();refreshChatterDetailTrainings(chatterId);}
+}
+function deleteChatterTraining(trainingId,chatterId){
+  S.chatterTrainings=S.chatterTrainings.filter(x=>x.id!==trainingId);
+  save();toast('Removido');refreshChatterDetailTrainings(chatterId);
+}
+function refreshChatterDetailTrainings(chatterId){
+  const el=document.getElementById('training-list-'+chatterId);
+  if(!el)return;
+  const items=S.chatterTrainings.filter(t=>t.chatterId===chatterId);
+  if(!items.length){el.innerHTML='<div style="font-size:12px;color:var(--text3)">Nenhum treinamento cadastrado</div>';return;}
+  el.innerHTML=items.map(t=>`
+    <div class="taskrow ${t.done?'done':''}" style="margin-bottom:6px">
+      <div class="tcheck ${t.done?'done':''}" onclick="toggleChatterTraining('${t.id}','${chatterId}')">${t.done?'✓':''}</div>
+      <div class="tbody"><div class="ttext" style="font-size:12.5px">${t.title}</div></div>
+      <button class="btn btn-icon btn-line" onclick="deleteChatterTraining('${t.id}','${chatterId}')">✕</button>
+    </div>`).join('');
 }
 
 /* ===========================================================
    FATURAMENTO
    =========================================================== */
-function renderFat(){renderModelsList();renderRevenueTable();document.getElementById('fat-date-lb').textContent='Hoje · '+todayKey();renderReport('week');}
+function renderFat(){
+  renderModelsList();renderRevenueTable();
+  document.getElementById('fat-date-lb').textContent='Hoje · '+todayKey();
+  renderReport('week');
+  renderDailyByModel();
+  renderDailyByChatter();
+  renderChatterGoals();
+}
 function renderModelsList(){
   const el=document.getElementById('models-list');
   if(!S.models.length){el.innerHTML='<div style="color:var(--text3);font-size:13px">Nenhum modelo. Clique + modelo.</div>';return;}
@@ -1795,7 +2132,7 @@ function forceAddToday(chatterId){
   // Manually mark as "in" today so they appear in the revenue table without affecting shift schedule
   const today=todayKey();
   if(!S.turnoLog[today])S.turnoLog[today]=[];
-  S.turnoLog[today].push({chatterId,action:'in',time:nowHHMM(),manualAdd:true});
+  S.turnoLog[today].push({id:'tl'+Date.now()+Math.random().toString(36).slice(2,6),chatterId,action:'in',time:nowHHMM(),manualAdd:true});
   save();renderRevenueTable();renderTurnoBoard();renderHome();
   const c=S.chatters.find(ch=>ch.id===chatterId);
   toast(`✅ ${c?c.name:'?'} adicionado ao lançamento de hoje`);
@@ -1816,10 +2153,15 @@ function renderReport(period){
     <div class="divider"></div><div class="sectionlb">por chatter</div>
     ${S.chatters.map(c=>`<div class="reprow"><div class="replb">${c.name}</div><div class="repval">${money(getChatterWeekRevenue(c.id))}</div></div>`).join('')}`;
   } else {
-    const year=today.getFullYear(),month=today.getMonth();let total=0;
-    for(let d=1;d<=today.getDate();d++){const key=fmt(new Date(year,month,d));S.chatters.forEach(c=>S.models.forEach(m=>{total+=parseFloat(S.revenues[`${c.id}_${m.id}_${key}`])||0;}));}
+    const year=today.getFullYear(),month=today.getMonth();
+    const daysInMonthSoFar=Array.from({length:today.getDate()},(_,i)=>new Date(year,month,i+1));
+    let total=0;daysInMonthSoFar.forEach(d=>{const key=fmt(d);S.chatters.forEach(c=>S.models.forEach(m=>{total+=parseFloat(S.revenues[`${c.id}_${m.id}_${key}`])||0;}));});
     el.innerHTML=`<div style="font-family:var(--font-mono);font-size:26px;font-weight:700;color:var(--ok);text-align:center;padding:6px 0">${money(total)}</div>
-    <div style="text-align:center;font-size:12px;color:var(--text2);margin-bottom:8px">${MONTHS[month]} ${year}</div>`;
+    <div style="text-align:center;font-size:12px;color:var(--text2);margin-bottom:8px">${MONTHS[month]} ${year}</div>
+    <div class="divider"></div><div class="sectionlb">por modelo</div>
+    ${S.models.map(m=>{let r=0;daysInMonthSoFar.forEach(d=>{const key=fmt(d);S.chatters.forEach(c=>{r+=parseFloat(S.revenues[`${c.id}_${m.id}_${key}`])||0;});});return`<div class="reprow"><div class="replb">${m.emoji} ${m.name}</div><div class="repval">${money(r)}</div></div>`;}).join('')}
+    <div class="divider"></div><div class="sectionlb">por chatter</div>
+    ${S.chatters.map(c=>{let r=0;daysInMonthSoFar.forEach(d=>{const key=fmt(d);S.models.forEach(m=>{r+=parseFloat(S.revenues[`${c.id}_${m.id}_${key}`])||0;});});return`<div class="reprow"><div class="replb">${c.name}</div><div class="repval">${money(r)}</div></div>`;}).join('')}`;
   }
 }
 function buildRevReport(){
@@ -1832,6 +2174,160 @@ function buildRevReport(){
     html+=`<div class="reprow" style="flex-direction:column;align-items:stretch"><div style="display:flex;justify-content:space-between"><span style="font-weight:700">${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'][i]} ${d.getDate()}/${d.getMonth()+1}</span><span style="font-family:var(--font-mono);font-weight:800;color:var(--ok)">${money(dayTotal)}</span></div>${breakdown}</div>`;
   });
   el.innerHTML=html||'<div class="empty"><div class="empty-tx">Nenhum lançamento</div></div>';
+}
+
+/* ===========================================================
+   DAILY BREAKDOWN BY MODEL — day-by-day table for each model,
+   across the current week.
+   =========================================================== */
+function renderDailyByModel(){
+  const el=document.getElementById('daily-by-model');
+  if(!el)return;
+  if(!S.models.length){el.innerHTML='<div class="empty"><div class="empty-tx">Cadastre modelos para ver o diário</div></div>';return;}
+  const wd=getWeekDates();
+  const dayLabels=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+  let html=`<div style="overflow-x:auto"><table class="rtable"><thead><tr><th>Modelo</th>${dayLabels.map(d=>`<th style="text-align:right">${d}</th>`).join('')}<th style="text-align:right;color:var(--ok)">Total</th></tr></thead><tbody>`;
+  S.models.forEach(m=>{
+    let rowTotal=0;
+    const cells=wd.map(d=>{
+      let v=0;S.chatters.forEach(c=>{v+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(d)}`])||0;});
+      rowTotal+=v;
+      return`<td style="text-align:right;font-family:var(--font-mono);font-size:11.5px">${v>0?v.toLocaleString('pt-BR',{maximumFractionDigits:0}):'—'}</td>`;
+    }).join('');
+    html+=`<tr><td><div style="font-weight:700;font-size:13px">${m.emoji} ${m.name}</div></td>${cells}<td style="text-align:right;font-family:var(--font-mono);font-weight:800;color:var(--ok)">${moneyShort(rowTotal)}</td></tr>`;
+  });
+  html+='<tr class="rtotalrow"><td>TOTAL</td>';
+  wd.forEach(d=>{
+    let dayTotal=0;S.chatters.forEach(c=>S.models.forEach(m=>{dayTotal+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(d)}`])||0;}));
+    html+=`<td style="text-align:right;font-size:11.5px">${dayTotal>0?dayTotal.toLocaleString('pt-BR',{maximumFractionDigits:0}):'—'}</td>`;
+  });
+  html+=`<td style="text-align:right">${moneyShort(getWeekTotalRevenue())}</td></tr></tbody></table></div>`;
+  el.innerHTML=html;
+}
+
+/* ===========================================================
+   DAILY BREAKDOWN BY CHATTER — day-by-day table for each
+   chatter, across the current week.
+   =========================================================== */
+function renderDailyByChatter(){
+  const el=document.getElementById('daily-by-chatter');
+  if(!el)return;
+  if(!S.chatters.length){el.innerHTML='<div class="empty"><div class="empty-tx">Cadastre chatters para ver o diário</div></div>';return;}
+  const wd=getWeekDates();
+  const dayLabels=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+  let html=`<div style="overflow-x:auto"><table class="rtable"><thead><tr><th>Chatter</th>${dayLabels.map(d=>`<th style="text-align:right">${d}</th>`).join('')}<th style="text-align:right;color:var(--ok)">Total</th></tr></thead><tbody>`;
+  S.chatters.forEach(c=>{
+    let rowTotal=0;
+    const cells=wd.map(d=>{
+      let v=0;S.models.forEach(m=>{v+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(d)}`])||0;});
+      rowTotal+=v;
+      return`<td style="text-align:right;font-family:var(--font-mono);font-size:11.5px">${v>0?v.toLocaleString('pt-BR',{maximumFractionDigits:0}):'—'}</td>`;
+    }).join('');
+    html+=`<tr><td><div style="font-weight:700;font-size:13px">${c.name}</div></td>${cells}<td style="text-align:right;font-family:var(--font-mono);font-weight:800;color:var(--ok)">${moneyShort(rowTotal)}</td></tr>`;
+  });
+  html+='<tr class="rtotalrow"><td>TOTAL</td>';
+  wd.forEach(d=>{
+    let dayTotal=0;S.chatters.forEach(c=>S.models.forEach(m=>{dayTotal+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(d)}`])||0;}));
+    html+=`<td style="text-align:right;font-size:11.5px">${dayTotal>0?dayTotal.toLocaleString('pt-BR',{maximumFractionDigits:0}):'—'}</td>`;
+  });
+  html+=`<td style="text-align:right">${moneyShort(getWeekTotalRevenue())}</td></tr></tbody></table></div>`;
+  el.innerHTML=html;
+}
+function getWeekTotalRevenue(){
+  let t=0;getWeekDates().forEach(d=>S.chatters.forEach(c=>S.models.forEach(m=>{t+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(d)}`])||0;})));
+  return t;
+}
+
+/* ===========================================================
+   PER-CHATTER WEEKLY GOALS — manager sets a weekly revenue
+   target for each chatter; app computes progress, remaining
+   amount, and how much they need per remaining day to hit it.
+   =========================================================== */
+function getDaysRemainingInWeek(){
+  // Counts today + days left until Sunday (inclusive), so the
+  // person always sees "still achievable today" math.
+  const now=new Date();
+  const dow=now.getDay(); // 0=Sun..6=Sat
+  const isoDow=dow===0?7:dow; // 1=Mon..7=Sun
+  return Math.max(1,7-isoDow+1);
+}
+function renderChatterGoals(){
+  const el=document.getElementById('chatter-goals-list');
+  if(!el)return;
+  if(!S.chatters.length){el.innerHTML='<div class="empty"><div class="empty-tx">Cadastre chatters para definir metas</div></div>';return;}
+  const wkey=getWeekKey();
+  const goals=S.chatterWeekGoals[wkey]||{};
+  const daysLeft=getDaysRemainingInWeek();
+  el.innerHTML=S.chatters.map(c=>{
+    const target=parseFloat(goals[c.id])||0;
+    const current=getChatterWeekRevenue(c.id);
+    const remaining=Math.max(0,target-current);
+    const pct=target>0?Math.min(100,Math.round((current/target)*100)):0;
+    const perDay=remaining>0?remaining/daysLeft:0;
+    const met=target>0&&current>=target;
+    return`<div class="goalcard ${met?'met':''}">
+      <div class="goal-top">
+        <div class="goal-text">${c.name}</div>
+        <div style="display:flex;align-items:center;gap:5px">
+          <span style="font-size:11px;color:var(--text3)">meta:</span>
+          <input type="number" class="finput" style="width:90px;text-align:right;padding:5px 8px;font-size:12.5px" value="${target||''}" placeholder="0"
+            onchange="saveChatterGoal('${c.id}',this.value)">
+        </div>
+      </div>
+      ${target>0?`
+        <div class="goalbar-track"><div class="goalbar-fill" style="width:${pct}%"></div></div>
+        <div class="goal-nums">
+          <span>${money(current)} de ${money(target)}</span>
+          <span style="color:${met?'var(--ok)':'var(--warn)'}">${pct}%</span>
+        </div>
+        ${met?
+          `<div style="margin-top:8px;font-size:12px;color:var(--ok);font-weight:600">🎉 Meta da semana batida!</div>`
+          :`<div style="margin-top:8px;display:flex;gap:8px">
+            <div style="flex:1;background:var(--bg-soft);border-radius:8px;padding:8px 10px">
+              <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase">Falta</div>
+              <div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:var(--bad)">${money(remaining)}</div>
+            </div>
+            <div style="flex:1;background:var(--bg-soft);border-radius:8px;padding:8px 10px">
+              <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase">Por dia (${daysLeft}d restantes)</div>
+              <div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:var(--accent)">${money(perDay)}</div>
+            </div>
+          </div>`}
+      `:'<div style="font-size:11.5px;color:var(--text3);margin-top:6px">Defina uma meta para acompanhar o progresso</div>'}
+    </div>`;
+  }).join('');
+}
+function saveChatterGoal(chatterId,value){
+  const wkey=getWeekKey();
+  if(!S.chatterWeekGoals[wkey])S.chatterWeekGoals[wkey]={};
+  S.chatterWeekGoals[wkey][chatterId]=parseFloat(value)||0;
+  save();
+  toast('🎯 Meta definida!');
+  renderChatterGoals();
+}
+
+/* ===========================================================
+   MONTHLY GOAL HISTORY — for a given chatter, walk back through
+   every week key stored this month and report hit/miss + values.
+   =========================================================== */
+function getChatterMonthlyGoalHistory(chatterId){
+  const now=new Date();
+  const month=now.getMonth(),year=now.getFullYear();
+  const results=[];
+  Object.keys(S.chatterWeekGoals).forEach(wkey=>{
+    const weekStart=new Date(wkey+'T12:00:00');
+    if(isNaN(weekStart.getTime()))return;
+    // Only include weeks that start in the current month (good enough granularity for a manager's monthly view)
+    if(weekStart.getMonth()!==month||weekStart.getFullYear()!==year)return;
+    const target=parseFloat(S.chatterWeekGoals[wkey][chatterId])||0;
+    if(!target)return;
+    const weekEnd=new Date(weekStart);weekEnd.setDate(weekStart.getDate()+6);
+    let achieved=0;
+    for(let d=new Date(weekStart);d<=weekEnd;d.setDate(d.getDate()+1)){
+      S.models.forEach(m=>{achieved+=parseFloat(S.revenues[`${chatterId}_${m.id}_${fmt(d)}`])||0;});
+    }
+    results.push({weekStart:fmt(weekStart),target,achieved,met:achieved>=target});
+  });
+  return results.sort((a,b)=>a.weekStart.localeCompare(b.weekStart));
 }
 
 /* ===========================================================
@@ -1859,11 +2355,43 @@ function saveChatter(){
 function saveShift(){
   const chatterId=document.getElementById('shift-chatter').value;
   const start=document.getElementById('shift-start').value,end=document.getElementById('shift-end').value;
-  const days=Array.from(document.querySelectorAll('#m-shift .chip.sel')).map(c=>c.dataset.day);
+  const days=Array.from(document.querySelectorAll('#m-shift .chip[data-day].sel')).map(c=>c.dataset.day);
+  const modelIds=Array.from(document.querySelectorAll('#m-shift .chip[data-model].sel')).map(c=>c.dataset.model);
   if(!chatterId||!start||!end||!days.length){toast('⚠️ Preencha todos os campos');return;}
-  S.shifts.push({id:'s'+Date.now(),chatterId,start,end,days});save();
+  const editId=document.getElementById('shift-edit-id').value;
+  if(editId){
+    const s=S.shifts.find(sh=>sh.id===editId);
+    if(s){
+      s.chatterId=chatterId;s.start=start;s.end=end;s.days=days;s.modelIds=modelIds;
+      toast('✅ Turno atualizado!');
+    }
+  } else {
+    S.shifts.push({id:'s'+Date.now(),chatterId,start,end,days,modelIds});
+    toast('✅ Turno adicionado!');
+  }
+  save();
   closeModal('m-shift');document.querySelectorAll('#m-shift .chip').forEach(c=>c.classList.remove('sel'));
-  toast('✅ Turno adicionado!');renderTurno();
+  document.getElementById('shift-edit-id').value='';
+  document.getElementById('shift-modal-title').textContent='Escalar chatter';
+  renderTurno();
+}
+function openEditShift(shiftId){
+  const s=S.shifts.find(sh=>sh.id===shiftId);
+  if(!s)return;
+  document.getElementById('shift-edit-id').value=s.id;
+  openModal('m-shift');
+  document.getElementById('shift-modal-title').textContent='Editar turno';
+  setTimeout(()=>{
+    document.getElementById('shift-chatter').value=s.chatterId;
+    document.getElementById('shift-start').value=s.start;
+    document.getElementById('shift-end').value=s.end;
+    document.querySelectorAll('#m-shift .chip[data-day]').forEach(c=>{
+      c.classList.toggle('sel',(s.days||[]).includes(c.dataset.day));
+    });
+    document.querySelectorAll('#m-shift .chip[data-model]').forEach(c=>{
+      c.classList.toggle('sel',(s.modelIds||[]).includes(c.dataset.model));
+    });
+  },40);
 }
 function deleteShift(id){S.shifts=S.shifts.filter(s=>s.id!==id);save();renderScheduleForDay(selectedDay);renderAlarmList();toast('Removido');}
 function saveAbsence(){
@@ -1896,7 +2424,7 @@ function saveOvertime(){
   const date=document.getElementById('ot-date').value,note=document.getElementById('ot-note').value.trim();
   if(!chatterId||!start||!date){toast('⚠️ Preencha os campos');return;}
   if(!S.turnoLog[date])S.turnoLog[date]=[];
-  S.turnoLog[date].push({chatterId,action:'overtime',time:start,otEnd:end,note});
+  S.turnoLog[date].push({id:'tl'+Date.now()+Math.random().toString(36).slice(2,6),chatterId,action:'overtime',time:start,otEnd:end,note});
   save();closeModal('m-overtime');document.getElementById('ot-note').value='';
   const c=S.chatters.find(ch=>ch.id===chatterId);
   toast(`⏱ Hora extra de ${c?c.name:'?'} registrada!`);renderTurnoBoard();renderHome();
@@ -1905,24 +2433,30 @@ function saveOvertime(){
 // ---------- data helpers ----------
 function getTodayTotalRevenue(){const today=todayKey();let t=0;S.chatters.forEach(c=>S.models.forEach(m=>{t+=parseFloat(S.revenues[`${c.id}_${m.id}_${today}`])||0;}));return t;}
 function getChatterWeekRevenue(id){let t=0;getWeekDates().forEach(d=>S.models.forEach(m=>{t+=parseFloat(S.revenues[`${id}_${m.id}_${fmt(d)}`])||0;}));return t;}
-function getWeekAbsencesData(){const now=new Date();return S.absences.filter(a=>{const d=new Date(a.date);return(now-d)/864e5<7&&d<=now;});}
+function getWeekAbsencesData(){
+  const wd=getWeekDates();
+  const wkStart=fmt(wd[0]),wkEnd=fmt(wd[6]);
+  return S.absences.filter(a=>a.date>=wkStart&&a.date<=wkEnd);
+}
 
 // ---------- chips ----------
 document.querySelectorAll('.chip').forEach(chip=>chip.addEventListener('click',()=>chip.classList.toggle('sel')));
 
 // ---------- INIT ----------
 load();
-initFirebase();
+initFirebaseWithRetry();
 document.getElementById('abs-date').value=todayKey();
 
-if(!S.studies.length){
+if(!S.hasSeededStudies&&!S.studies.length){
   S.studies=[
     {id:'st1',title:'Liderança Situacional — adaptar estilo ao nível do liderado',category:'liderança',priority:'alta',done:false},
     {id:'st2',title:'Feedback eficaz: SBI (Situação, Comportamento, Impacto)',category:'comunicacao',priority:'alta',done:false},
     {id:'st3',title:'Preparar treinamento: técnicas de retenção para chatters júniores',category:'treinamento',priority:'media',done:false},
     {id:'st4',title:'Gestão de tempo: matriz de Eisenhower',category:'gestao',priority:'media',done:false},
     {id:'st5',title:'Técnicas de vendas conversacionais',category:'vendas',priority:'alta',done:false},
-  ];save();
+  ];
+  S.hasSeededStudies=true;
+  save();
 }
 
 updateClock();setInterval(updateClock,1000);
