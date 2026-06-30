@@ -795,6 +795,8 @@ let fbDb=null;
 let fbReady=false;
 let fbSaveTimer=null;
 let fbSyncStatus='connecting'; // connecting | online | offline | error
+let fbIgnoreNextSnapshot=false; // true right after we push our own write, to avoid stomping local edits with the echo
+let fbHasReceivedFirstSnapshot=false;
 
 function initFirebase(){
   try{
@@ -821,6 +823,16 @@ function listenToFirestore(){
   if(!fbDb)return;
   fbDb.collection('gestorpro').doc(FIREBASE_DOC_ID).onSnapshot(
     (doc)=>{
+      // Skip the echo of our own just-made write — our local S is already
+      // the freshest version, so applying the remote copy would undo
+      // anything the person typed in the few hundred ms before the
+      // debounced push completed.
+      if(fbIgnoreNextSnapshot){
+        fbIgnoreNextSnapshot=false;
+        fbHasReceivedFirstSnapshot=true;
+        fbSyncStatus='online';updateSyncBadge();
+        return;
+      }
       if(doc.exists){
         const remote=doc.data();
         if(remote&&remote.payload){
@@ -831,10 +843,11 @@ function listenToFirestore(){
             renderView(currentViewName());
           }catch(e){/* ignore parse errors */}
         }
-      } else {
-        // First time: push current local state up
+      } else if(!fbHasReceivedFirstSnapshot){
+        // Document truly doesn't exist yet anywhere — seed it from local state once.
         pushToFirestore();
       }
+      fbHasReceivedFirstSnapshot=true;
       fbSyncStatus='online';
       updateSyncBadge();
     },
@@ -848,6 +861,7 @@ function listenToFirestore(){
 
 function pushToFirestore(){
   if(!fbDb||!fbReady)return;
+  fbIgnoreNextSnapshot=true;
   fbDb.collection('gestorpro').doc(FIREBASE_DOC_ID).set({
     payload:JSON.stringify(S),
     updatedAt:firebase.firestore.FieldValue.serverTimestamp()
@@ -855,6 +869,7 @@ function pushToFirestore(){
     fbSyncStatus='online';updateSyncBadge();
   }).catch((err)=>{
     console.error('Firestore write error',err);
+    fbIgnoreNextSnapshot=false;
     fbSyncStatus='offline';updateSyncBadge();
   });
 }
