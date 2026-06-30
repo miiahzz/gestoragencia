@@ -598,7 +598,7 @@ body{
 
   <div class="panel">
     <div class="panel-head"><div class="panel-title">Relatórios</div></div>
-    <div class="segtabs">
+    <div class="segtabs" id="report-period-tabs">
       <button class="segtab active" data-rep="week">Semana</button>
       <button class="segtab" data-rep="month">Mês</button>
     </div>
@@ -1785,9 +1785,9 @@ function forceAddToday(chatterId){
   const c=S.chatters.find(ch=>ch.id===chatterId);
   toast(`✅ ${c?c.name:'?'} adicionado ao lançamento de hoje`);
 }
-document.querySelectorAll('#v-fat .segtabs')[1].addEventListener('click',e=>{
+document.getElementById('report-period-tabs').addEventListener('click',e=>{
   const b=e.target.closest('.segtab');if(!b)return;
-  document.querySelectorAll('#v-fat .segtabs')[1].querySelectorAll('.segtab').forEach(x=>x.classList.remove('active'));b.classList.add('active');
+  document.getElementById('report-period-tabs').querySelectorAll('.segtab').forEach(x=>x.classList.remove('active'));b.classList.add('active');
   renderReport(b.dataset.rep);
 });
 function renderReport(period){
