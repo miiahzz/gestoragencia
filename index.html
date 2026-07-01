@@ -417,6 +417,10 @@ body{
     <div id="home-midnight-preview"></div>
   </div>
 
+  <div class="panel" id="home-folga-panel" style="display:none;border-color:rgba(180,35,52,.25)">
+    <div id="home-folga-content"></div>
+  </div>
+
   <div class="panel">
     <div class="panel-head"><div class="panel-title">Nota rápida</div></div>
     <textarea class="ftext" id="quicknote" placeholder="Anotação rápida do turno..." style="min-height:56px"></textarea>
@@ -789,6 +793,17 @@ body{
   <div class="modalbtns"><button class="btn btn-ghost btn-block" onclick="closeModal('m-goal')">Cancelar</button><button class="btn btn-primary btn-block" onclick="saveGoal()">Adicionar</button></div>
 </div></div>
 
+<div class="modalbg" id="m-discord-report"><div class="modal">
+  <div class="modal-handle"></div>
+  <div class="modal-title">📊 Relatório semanal — <span id="report-discord-name"></span></div>
+  <div style="font-size:12px;color:var(--text3);margin-bottom:10px">Toque em "Copiar" e cole direto no Discord</div>
+  <textarea class="ftext" id="report-discord-text" readonly style="min-height:280px;font-family:var(--font-mono);font-size:11.5px;line-height:1.6" onclick="this.select()"></textarea>
+  <div class="modalbtns" style="margin-top:10px">
+    <button class="btn btn-ghost btn-block" onclick="closeModal('m-discord-report')">Fechar</button>
+    <button class="btn btn-primary btn-block" onclick="copyDiscordReport()">📋 Copiar</button>
+  </div>
+</div></div>
+
 <div class="modalbg" id="m-backup-export"><div class="modal">
   <div class="modal-handle"></div><div class="modal-title">💾 Backup exportado</div>
   <div style="font-size:12.5px;color:var(--text2);margin-bottom:10px;line-height:1.5">
@@ -1015,7 +1030,8 @@ let S={
   weekNotes:{},         // weekKey -> text
   watchAlerts:{},       // date -> {chatterId: 'pending'|'confirmed'|'missed'}
   chatterTrainings:[],  // [{id, chatterId, title, done, createdAt}]
-  hasSeededStudies:false // tracks whether default study items were already injected once, so deleting them all doesn't bring them back
+  hasSeededStudies:false,
+  folgas:{}             // date -> [chatterId, ...] — manual day-off registrations
 };
 
 /* ===========================================================
@@ -1189,6 +1205,10 @@ function updateClock(){
   checkMidnightGeneration();
   checkLoginWatch();
   updateNavDots();
+  // Refresh folga panel every minute at the boundary hours (22h show, 6h hide)
+  if(now.getSeconds()===0&&(now.getHours()===22||now.getHours()===6)){
+    renderFolgaPanel();
+  }
 }
 
 // ---------- NAV DOTS (pending indicators) ----------
@@ -1479,6 +1499,74 @@ function toggleMidnight(dateKey,id){
 /* ===========================================================
    HOME
    =========================================================== */
+/* ===========================================================
+   FOLGAS — manual day-off registrations.
+   A panel appears on the home screen after 22h showing who
+   is off tomorrow, so the manager can plan extra coverage.
+   =========================================================== */
+function getTomorrowKey(){
+  const d=new Date();d.setDate(d.getDate()+1);return fmt(d);
+}
+function getFolgasForDate(dateKey){
+  return(S.folgas[dateKey]||[]).map(id=>S.chatters.find(c=>c.id===id)).filter(Boolean);
+}
+function toggleFolga(chatterId,dateKey){
+  if(!S.folgas[dateKey])S.folgas[dateKey]=[];
+  const idx=S.folgas[dateKey].indexOf(chatterId);
+  if(idx===-1)S.folgas[dateKey].push(chatterId);
+  else S.folgas[dateKey].splice(idx,1);
+  save();renderFolgaPanel();
+}
+function isFolgaActive(){
+  // Show the panel from 22h of today until end of tomorrow
+  const now=new Date();
+  return now.getHours()>=22||now.getHours()<6;
+}
+function renderFolgaPanel(){
+  const panel=document.getElementById('home-folga-panel');
+  const el=document.getElementById('home-folga-content');
+  if(!panel||!el)return;
+  const tomorrow=getTomorrowKey();
+  const tomorrowDate=new Date();tomorrowDate.setDate(tomorrowDate.getDate()+1);
+  const dayName=DAYS[tomorrowDate.getDay()];
+  const folgasAmanha=S.folgas[tomorrow]||[];
+  // Show if it's after 22h OR if there are folgas registered for tomorrow
+  const shouldShow=isFolgaActive()||folgasAmanha.length>0;
+  if(!shouldShow||!S.chatters.length){panel.style.display='none';return;}
+  panel.style.display='block';
+  const chattersOff=getFolgasForDate(tomorrow);
+  const chattersOn=S.chatters.filter(c=>!folgasAmanha.includes(c.id));
+  el.innerHTML=`
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <span style="font-size:20px">🌙</span>
+      <div>
+        <div style="font-weight:700;font-size:14px">Folgas de amanhã · ${dayName}</div>
+        <div style="font-size:11.5px;color:var(--text2)">Programe as janelas de hora extra</div>
+      </div>
+    </div>
+    <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px">Marcar de folga amanhã</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">
+      ${S.chatters.map(c=>{
+        const onFolga=folgasAmanha.includes(c.id);
+        const color=getComputedLevelColor(c.level);
+        return`<button onclick="toggleFolga('${c.id}','${tomorrow}')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;border:1.5px solid ${onFolga?'var(--bad)':'var(--line)'};background:${onFolga?'var(--bad-soft)':'var(--bg-soft)'};cursor:pointer;font-family:var(--font-display);font-size:12.5px;font-weight:${onFolga?'700':'500'};color:${onFolga?'var(--bad)':'var(--text2)'}">
+          ${onFolga?'🏖️':''}${c.name}
+        </button>`;
+      }).join('')}
+    </div>
+    ${chattersOff.length?`
+      <div style="background:var(--bad-soft);border:1px solid rgba(180,35,52,.2);border-radius:10px;padding:11px 13px">
+        <div style="font-size:11px;font-weight:700;color:var(--bad);text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px">⛱ De folga amanhã (${chattersOff.length})</div>
+        ${chattersOff.map(c=>`<div style="font-size:13px;font-weight:600;color:var(--text);padding:3px 0">${c.name} <span style="font-size:11px;color:var(--text3)">${c.level}</span></div>`).join('')}
+      </div>
+      ${chattersOn.length?`<div style="margin-top:9px;background:var(--ok-soft);border:1px solid rgba(23,115,80,.2);border-radius:10px;padding:11px 13px">
+        <div style="font-size:11px;font-weight:700;color:var(--ok);text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px">✅ Disponíveis amanhã (${chattersOn.length})</div>
+        ${chattersOn.map(c=>`<div style="font-size:13px;font-weight:600;color:var(--text);padding:3px 0">${c.name} <span style="font-size:11px;color:var(--text3)">${c.level}</span></div>`).join('')}
+      </div>`:''}
+    `:'<div style="font-size:12.5px;color:var(--text3);text-align:center;padding:8px 0">Nenhuma folga marcada para amanhã</div>'}
+  `;
+}
+
 function renderHome(){
   const today=todayKey();
   const log=S.turnoLog[today]||[];
@@ -1488,6 +1576,7 @@ function renderHome(){
   document.getElementById('s-abs').textContent=getWeekAbsencesData().length;
   renderWatchBanner();
   renderMidnightPreviewHome();
+  renderFolgaPanel();
 
   const listEl=document.getElementById('home-roster');
   if(!S.chatters.length){listEl.innerHTML='<div class="empty"><div class="empty-tx">Cadastre chatters na aba Equipe</div></div>';return;}
