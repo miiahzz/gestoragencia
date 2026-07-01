@@ -372,6 +372,8 @@ body{
     <button class="toptab" data-go="semana">Semana</button>
     <button class="toptab" data-go="time">Equipe</button>
     <button class="toptab" data-go="fat">Faturamento</button>
+    <button class="toptab" data-go="report">Relatório</button>
+    <button class="toptab" data-go="extra">H. Extra</button>
   </nav>
 </header>
 
@@ -382,6 +384,14 @@ body{
   <div class="eyebrow">status ao vivo</div>
   <div class="view-title">Painel</div>
   <div class="view-sub">Visão geral da operação agora.</div>
+
+  <div class="panel" style="margin-bottom:14px">
+    <div class="panel-head">
+      <div><div class="panel-title">🔔 Atenção necessária</div></div>
+      <span id="smart-alerts-badge" class="pill pill-bad" style="font-size:10px"></span>
+    </div>
+    <div id="home-smart-alerts"></div>
+  </div>
 
   <div class="statgrid">
     <div class="statcell"><div class="statval" id="s-online">0</div><div class="statlb">Online agora</div></div>
@@ -427,14 +437,15 @@ body{
     <button class="btn btn-primary btn-sm" style="margin-top:9px" onclick="saveQuickNote()">Salvar nota</button>
   </div>
 
-  <div class="panel">
-    <div class="panel-head"><div><div class="panel-title">💾 Backup dos dados</div><div class="panel-note">Exporte sempre antes de atualizar o app, para não perder o que já cadastrou</div></div></div>
-    <div style="display:flex;gap:8px;margin-bottom:8px">
-      <button class="btn btn-soft btn-sm" style="flex:1" onclick="exportBackup()">Exportar backup</button>
-      <button class="btn btn-ghost btn-sm" style="flex:1" onclick="triggerImportInput()">Importar arquivo</button>
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg-soft);border-radius:10px;margin-bottom:8px">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:15px">💾</span>
+      <div>
+        <div style="font-size:12.5px;font-weight:600;color:var(--text)">Backup automático</div>
+        <div style="font-size:11px;color:var(--text3)" id="backup-status-lb">sincronizando com Firebase...</div>
+      </div>
     </div>
-    <button class="btn btn-line btn-sm btn-block" onclick="openModal('m-backup-import')">Importar colando texto</button>
-    <input type="file" id="backup-file-input" accept=".json" style="display:none" onchange="importBackup(this.files[0])">
+    <span class="pill pill-ok" id="backup-status-pill" style="font-size:10px">ativo</span>
   </div>
 </section>
 
@@ -631,6 +642,105 @@ body{
   </div>
 </section>
 
+<!-- ===================== RELATÓRIO SEMANAL ===================== -->
+<section class="view" id="v-report">
+  <div class="eyebrow">gestão</div>
+  <div class="view-title">Relatório Semanal</div>
+  <div class="view-sub" id="report-wk-range">—</div>
+
+  <!-- Seção 1: Visão Geral — preenchida automaticamente -->
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">1. Visão Geral</div><span class="pill pill-ok" style="font-size:10px">automático</span></div>
+    <div id="rpt-visao-geral"></div>
+  </div>
+
+  <!-- Seção 2: Performance por Chatter — semi-automático -->
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">2. Performance por Chatter</div><span class="pill pill-ok" style="font-size:10px">automático</span></div>
+    <div id="rpt-performance"></div>
+  </div>
+
+  <!-- Seção 3: Chatters em Teste — semi-automático -->
+  <div class="panel" id="rpt-teste-panel">
+    <div class="panel-head"><div class="panel-title">3. Chatters em Teste</div><span class="pill pill-ok" style="font-size:10px">automático</span></div>
+    <div id="rpt-teste"></div>
+  </div>
+
+  <!-- Seção 4: Evolução dos Novos — automático -->
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">4. Evolução dos Novos</div><span class="pill pill-ok" style="font-size:10px">automático</span></div>
+    <div id="rpt-evolucao"></div>
+  </div>
+
+  <!-- Seção 5: Seus erros — manual -->
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">5. Seus Principais Erros da Semana</div><span class="pill pill-flat" style="font-size:10px">manual</span></div>
+    <div class="field"><label class="flabel">Erro 1</label><input class="finput" id="rpt-erro1" placeholder="Descreva o erro..."></div>
+    <div class="field"><label class="flabel">Erro 2</label><input class="finput" id="rpt-erro2" placeholder="Descreva o erro..."></div>
+    <div class="field"><label class="flabel">Erro 3</label><input class="finput" id="rpt-erro3" placeholder="Descreva o erro..."></div>
+  </div>
+
+  <!-- Seção 6: Ações realizadas — semi-automático -->
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">6. Ações Realizadas</div><span class="pill pill-ok" style="font-size:10px">automático</span></div>
+    <div id="rpt-acoes"></div>
+    <div class="field" style="margin-top:10px"><label class="flabel">Ajustes na operação</label><input class="finput" id="rpt-ajustes" placeholder="Ex: mudei horário do turno da tarde..."></div>
+  </div>
+
+  <!-- Seção 7: Problemas — manual -->
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">7. Problemas Encontrados</div><span class="pill pill-flat" style="font-size:10px">manual</span></div>
+    <div class="field"><label class="flabel">Problema 1</label><input class="finput" id="rpt-prob1" placeholder="Descreva o problema..."></div>
+    <div class="field"><label class="flabel">Problema 2</label><input class="finput" id="rpt-prob2" placeholder="Descreva o problema..."></div>
+  </div>
+
+  <!-- Seção 8: Plano próxima semana — manual -->
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">8. Plano para Próxima Semana</div><span class="pill pill-flat" style="font-size:10px">manual</span></div>
+    <div class="field"><label class="flabel">Ação 1</label><input class="finput" id="rpt-plano1" placeholder="Ex: focar em chatter X..."></div>
+    <div class="field"><label class="flabel">Ação 2</label><input class="finput" id="rpt-plano2" placeholder=""></div>
+    <div class="field"><label class="flabel">Ação 3</label><input class="finput" id="rpt-plano3" placeholder=""></div>
+  </div>
+
+  <button class="btn btn-primary btn-block" style="margin-bottom:8px" onclick="generateFullReport()">📋 Gerar relatório completo</button>
+  <button class="btn btn-ghost btn-block" onclick="saveReportDraft()">💾 Salvar rascunho</button>
+
+  <!-- Preview do relatório gerado -->
+  <div class="panel" id="rpt-output-panel" style="display:none;margin-top:12px">
+    <div class="panel-head"><div class="panel-title">Relatório gerado</div></div>
+    <textarea class="ftext" id="rpt-output" readonly style="min-height:400px;font-family:var(--font-mono);font-size:11px;line-height:1.7" onclick="this.select()"></textarea>
+    <button class="btn btn-primary btn-block" style="margin-top:10px" onclick="copyFullReport()">📋 Copiar tudo</button>
+  </div>
+</section>
+
+<!-- ===================== HORA EXTRA ===================== -->
+<section class="view" id="v-extra">
+  <div class="eyebrow">operação</div>
+  <div class="view-title">Hora Extra</div>
+  <div class="view-sub" id="extra-sub">Vagas disponíveis esta semana</div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">⚡ Vagas disponíveis</div><div class="panel-note">Geradas automaticamente pelos dias de folga dos turnos</div></div>
+      <span class="pill pill-info" id="extra-vagas-badge">0 vagas</span>
+    </div>
+    <div id="extra-vagas-list"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">✅ Hora extra atribuída</div><div class="panel-note">Faturamento separado do geral</div></div>
+      <span class="pill pill-ok" id="extra-total-badge">R$0</span>
+    </div>
+    <div id="extra-atribuida-list"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">💰 Faturamento de hora extra</div></div>
+    <div id="extra-fat-breakdown"></div>
+  </div>
+</section>
+
 </main>
 
 <nav class="bottomnav" id="bottomnav">
@@ -640,6 +750,8 @@ body{
   <button class="navbtn" data-go="semana"><span class="navbtn-ic">◎</span><span class="navbtn-lb">Semana</span></button>
   <button class="navbtn" data-go="time"><span class="navbtn-ic">▦</span><span class="navbtn-lb">Equipe</span></button>
   <button class="navbtn" data-go="fat"><span class="navbtn-ic">¤</span><span class="navbtn-lb">Fat.</span></button>
+  <button class="navbtn" data-go="report"><span class="navbtn-ic">📋</span><span class="navbtn-lb">Relatório</span></button>
+  <button class="navbtn" data-go="extra"><span class="navbtn-ic">⚡</span><span class="navbtn-lb">H.Extra</span></button>
 </nav>
 </div>
 
@@ -656,11 +768,23 @@ body{
   <div class="modal-handle"></div><div class="modal-title" id="shift-modal-title">Escalar chatter</div>
   <input type="hidden" id="shift-edit-id" value="">
   <div class="field"><label class="flabel">Chatter</label><select class="fselect" id="shift-chatter"></select></div>
-  <div class="fgrid2">
-    <div class="field"><label class="flabel">Entrada</label><input type="time" class="finput" id="shift-start"></div>
-    <div class="field"><label class="flabel">Saída</label><input type="time" class="finput" id="shift-end"></div>
+
+  <div class="field"><label class="flabel">1º Horário</label>
+    <div class="fgrid2">
+      <div><label class="flabel" style="font-size:10.5px;color:var(--text3)">Entrada</label><input type="time" class="finput" id="shift-start"></div>
+      <div><label class="flabel" style="font-size:10.5px;color:var(--text3)">Saída</label><input type="time" class="finput" id="shift-end"></div>
+    </div>
   </div>
-  <div class="field"><label class="flabel">Dias</label>
+
+  <div class="field">
+    <label class="flabel">2º Horário <span style="font-size:10.5px;color:var(--text3);font-weight:400">(opcional)</span></label>
+    <div class="fgrid2">
+      <div><label class="flabel" style="font-size:10.5px;color:var(--text3)">Entrada</label><input type="time" class="finput" id="shift-start2"></div>
+      <div><label class="flabel" style="font-size:10.5px;color:var(--text3)">Saída</label><input type="time" class="finput" id="shift-end2"></div>
+    </div>
+  </div>
+
+  <div class="field"><label class="flabel">Dias de trabalho</label>
     <div class="chiprow">
       <button class="chip" data-day="seg">Seg</button><button class="chip" data-day="ter">Ter</button>
       <button class="chip" data-day="qua">Qua</button><button class="chip" data-day="qui">Qui</button>
@@ -668,6 +792,17 @@ body{
       <button class="chip" data-day="dom">Dom</button>
     </div>
   </div>
+
+  <div class="field"><label class="flabel">Dia de folga <span style="font-size:10.5px;color:var(--text3);font-weight:400">(gera vaga de hora extra automática)</span></label>
+    <div class="chiprow" id="shift-folga-chips">
+      <button class="chip chip-folga" data-folga="">Nenhum</button>
+      <button class="chip chip-folga" data-folga="seg">Seg</button><button class="chip chip-folga" data-folga="ter">Ter</button>
+      <button class="chip chip-folga" data-folga="qua">Qua</button><button class="chip chip-folga" data-folga="qui">Qui</button>
+      <button class="chip chip-folga" data-folga="sex">Sex</button><button class="chip chip-folga" data-folga="sab">Sáb</button>
+      <button class="chip chip-folga" data-folga="dom">Dom</button>
+    </div>
+  </div>
+
   <div class="field"><label class="flabel">Modelos atendidas nesse turno</label>
     <div class="chiprow" id="shift-model-chips"></div>
     <div style="font-size:11px;color:var(--text3);margin-top:6px" id="shift-model-empty-note"></div>
@@ -804,30 +939,6 @@ body{
   </div>
 </div></div>
 
-<div class="modalbg" id="m-backup-export"><div class="modal">
-  <div class="modal-handle"></div><div class="modal-title">💾 Backup exportado</div>
-  <div style="font-size:12.5px;color:var(--text2);margin-bottom:10px;line-height:1.5">
-    O download direto não funciona no Safari do iPhone. Copie o texto abaixo e cole em <strong>Notas</strong> ou salve como arquivo em <strong>Arquivos</strong> — guarde com o nome <span id="backup-export-filename" style="font-family:var(--font-mono)"></span>.
-  </div>
-  <textarea class="ftext" id="backup-export-text" readonly style="min-height:160px;font-family:var(--font-mono);font-size:11px" onclick="this.select()"></textarea>
-  <div class="modalbtns">
-    <button class="btn btn-ghost btn-block" onclick="closeModal('m-backup-export')">Fechar</button>
-    <button class="btn btn-primary btn-block" onclick="copyBackupText()">Copiar texto</button>
-  </div>
-</div></div>
-
-<div class="modalbg" id="m-backup-import"><div class="modal">
-  <div class="modal-handle"></div><div class="modal-title">📥 Importar backup (colar texto)</div>
-  <div style="font-size:12.5px;color:var(--text2);margin-bottom:10px;line-height:1.5">
-    Se o seletor de arquivo não funcionar, cole aqui o conteúdo do backup que você salvou em Notas/Arquivos.
-  </div>
-  <textarea class="ftext" id="backup-import-text" placeholder="Cole aqui o conteúdo do backup..." style="min-height:160px;font-family:var(--font-mono);font-size:11px"></textarea>
-  <div class="modalbtns">
-    <button class="btn btn-ghost btn-block" onclick="closeModal('m-backup-import')">Cancelar</button>
-    <button class="btn btn-primary btn-block" onclick="importBackupFromText()">Importar</button>
-  </div>
-</div></div>
-
 <div class="toast" id="toast"></div>
 
 <script>
@@ -851,7 +962,45 @@ body{
    CENTRAL — GestorPro app logic
    ============================================================ */
 const DB='gestorpro_v4';
-const FIREBASE_DOC_ID='central-dados'; // single shared document holding all app state
+const FIREBASE_DOC_ID='central-dados';
+const SCHEMA_VERSION=2; // bump this when S structure changes to trigger migrations
+
+// ---------- MIGRATIONS ----------
+// When we add new fields to S, old saved data won't have them.
+// This function fills in any missing fields with safe defaults.
+function migrateState(s){
+  // v1 -> v2: added folgas, chatterTrainings, hasSeededStudies
+  if(!s.folgas)s.folgas={};
+  if(!s.reportDrafts)s.reportDrafts={};
+  if(!s.smartAlertsDone)s.smartAlertsDone={};
+  if(!s.alertNotes)s.alertNotes={};
+  if(!s.horaExtraSlots)s.horaExtraSlots={};
+  // Migrate shifts to support start2/end2/folgaDia fields
+  if(Array.isArray(s.shifts))s.shifts=s.shifts.map(sh=>({start2:'',end2:'',folgaDia:'',modelIds:[],...sh}));
+  if(!s.chatterTrainings)s.chatterTrainings=[];
+  if(s.hasSeededStudies===undefined)s.hasSeededStudies=false;
+  if(!s.chatterWeekGoals)s.chatterWeekGoals={};
+  if(!s.weekNotes)s.weekNotes={};
+  if(!s.watchAlerts)s.watchAlerts={};
+  if(!s.midnightTasks)s.midnightTasks={};
+  if(!s.dailyTasks)s.dailyTasks={};
+  if(!s.weekGoals)s.weekGoals={};
+  if(!s.revenues)s.revenues={};
+  if(!s.models)s.models=[];
+  if(!s.quickNotes)s.quickNotes=[];
+  if(!s.turnoLog)s.turnoLog={};
+  if(!s.chatters)s.chatters=[];
+  if(!s.shifts)s.shifts=[];
+  if(!s.absences)s.absences=[];
+  if(!s.orientations)s.orientations=[];
+  if(!s.studies)s.studies=[];
+  // ensure every chatter has required fields
+  s.chatters=s.chatters.map(c=>({
+    level:'junior',discord:'',notes:'',watchtime:'',createdAt:new Date().toISOString(),
+    ...c
+  }));
+  return s;
+}
 
 /* ===========================================================
    FIREBASE SYNC
@@ -935,7 +1084,18 @@ function listenToFirestore(){
         if(remote&&remote.payload){
           try{
             const parsed=JSON.parse(remote.payload);
-            S={...S,...parsed};
+            const migrated=migrateState(parsed);
+            // Smart merge: Firebase wins for everything EXCEPT critical arrays —
+            // if Firebase sends an empty array but we have local data, keep local.
+            // This protects against accidental data loss from sync bugs.
+            const CRITICAL_ARRAYS=['chatters','shifts','absences','orientations','studies','models','chatterTrainings'];
+            const safeParsed={...migrated};
+            CRITICAL_ARRAYS.forEach(key=>{
+              if(Array.isArray(safeParsed[key])&&safeParsed[key].length===0&&Array.isArray(S[key])&&S[key].length>0){
+                delete safeParsed[key];
+              }
+            });
+            S={...S,...safeParsed};
             try{localStorage.setItem(DB,JSON.stringify(S));}catch(e){}
             // If the person is mid-typing in a text field, don't yank the
             // screen out from under them — re-render once they blur instead.
@@ -956,6 +1116,7 @@ function listenToFirestore(){
       fbHasReceivedFirstSnapshot=true;
       fbSyncStatus='online';
       updateSyncBadge();
+      runAutoBackupIfNeeded();
     },
     (err)=>{
       console.error('Firestore listen error',err);
@@ -971,6 +1132,7 @@ function pushToFirestore(){
   fbIgnoreNextSnapshot=true;
   fbDb.collection('gestorpro').doc(FIREBASE_DOC_ID).set({
     payload:JSON.stringify(S),
+    schemaVersion:SCHEMA_VERSION,
     updatedAt:firebase.firestore.FieldValue.serverTimestamp()
   }).then(()=>{
     fbSyncStatus='online';updateSyncBadge();
@@ -1018,7 +1180,15 @@ function save(){
   clearTimeout(fbSaveTimer);
   fbSaveTimer=setTimeout(()=>pushToFirestore(),600);
 }
-function load(){try{const d=localStorage.getItem(DB);if(d)S={...S,...JSON.parse(d)};}catch(e){}}
+function load(){
+  try{
+    const d=localStorage.getItem(DB);
+    if(d){
+      const parsed=JSON.parse(d);
+      S={...S,...migrateState(parsed)};
+    }
+  }catch(e){}
+}
 let S={
   chatters:[],shifts:[],absences:[],orientations:[],studies:[],revenues:{},models:[],
   quickNotes:[],lastCode:null,
@@ -1031,84 +1201,41 @@ let S={
   watchAlerts:{},       // date -> {chatterId: 'pending'|'confirmed'|'missed'}
   chatterTrainings:[],  // [{id, chatterId, title, done, createdAt}]
   hasSeededStudies:false,
-  folgas:{}             // date -> [chatterId, ...] — manual day-off registrations
+  folgas:{},             // date -> [chatterId, ...] — manual day-off registrations
+  reportDrafts:{},        // weekKey -> {field: value} — manual fields of weekly report
+  smartAlertsDone:{},    // dateKey -> [alertId, ...] — alerts marked as done today
+  alertNotes:{},         // 'date_alertId' -> text
+  horaExtraSlots:{}      // weekKey -> [{id, shiftId, chatterId, horario, start, end, modelId, revenue, done}]
 };
 
 /* ===========================================================
-   BACKUP — export/import all data as a .json file.
-   Protects the person's data across app updates, since
-   localStorage is tied to this exact page and can be lost
-   when the file is replaced or cache is cleared.
+   AUTOMATIC BACKUP — saves a daily snapshot to Firebase under
+   gestorpro/backup-{dateKey} once per day. No manual action
+   needed. The home screen shows when the last backup ran.
    =========================================================== */
-function exportBackup(){
-  try{
-    const data=JSON.stringify(S,null,2);
-    const stamp=todayKey();
-    const filename=`backup-gestorpro-${stamp}.json`;
+let lastAutoBackupDate='';
 
-    // Try native Web Share API first (works great on iOS Safari with a real file)
-    if(navigator.share&&navigator.canShare){
-      try{
-        const file=new File([data],filename,{type:'application/json'});
-        if(navigator.canShare({files:[file]})){
-          navigator.share({files:[file],title:'Backup GestorPro'})
-            .then(()=>toast('💾 Backup compartilhado!'))
-            .catch(()=>showBackupFallback(data,filename));
-          return;
-        }
-      }catch(e){/* fall through to fallback */}
-    }
-    showBackupFallback(data,filename);
-  }catch(e){toast('⚠️ Erro ao exportar backup');}
+function runAutoBackupIfNeeded(){
+  if(!fbDb||!fbReady)return;
+  const today=todayKey();
+  if(lastAutoBackupDate===today)return;
+  lastAutoBackupDate=today;
+  fbDb.collection('gestorpro').doc(`backup-${today}`).set({
+    payload:JSON.stringify(S),
+    createdAt:firebase.firestore.FieldValue.serverTimestamp(),
+    schemaVersion:SCHEMA_VERSION
+  }).then(()=>{
+    updateBackupStatus(`Último backup: hoje às ${nowHHMM()}`,'pill-ok');
+  }).catch(err=>{
+    console.error('Auto backup failed',err);
+    updateBackupStatus('Backup falhou — dados principais no Firebase','pill-warn');
+  });
 }
-function showBackupFallback(data,filename){
-  // iOS Safari often blocks programmatic downloads silently.
-  // Show the JSON in a copyable textarea inside a modal instead —
-  // the person can select all, copy, and paste it into Notes/Files to save.
-  const modal=document.getElementById('m-backup-export');
-  document.getElementById('backup-export-text').value=data;
-  document.getElementById('backup-export-filename').textContent=filename;
-  modal.classList.add('open');
-}
-function copyBackupText(){
-  const ta=document.getElementById('backup-export-text');
-  ta.select();ta.setSelectionRange(0,999999);
-  try{
-    document.execCommand('copy');
-    toast('✅ Copiado! Cole em Notas ou Arquivos para guardar.');
-  }catch(e){
-    toast('⚠️ Selecione o texto manualmente e copie');
-  }
-}
-function importBackup(file){
-  if(!file)return;
-  const reader=new FileReader();
-  reader.onload=function(e){
-    try{
-      const imported=JSON.parse(e.target.result);
-      if(!imported||typeof imported!=='object'){toast('⚠️ Arquivo inválido');return;}
-      S={...S,...imported};
-      save();
-      toast('✅ Backup importado! Recarregando...');
-      setTimeout(()=>location.reload(),1200);
-    }catch(err){toast('⚠️ Não foi possível ler o arquivo');}
-  };
-  reader.readAsText(file);
-}
-function importBackupFromText(){
-  const text=document.getElementById('backup-import-text').value.trim();
-  if(!text){toast('⚠️ Cole o conteúdo do backup primeiro');return;}
-  try{
-    const imported=JSON.parse(text);
-    if(!imported||typeof imported!=='object'){toast('⚠️ Conteúdo inválido');return;}
-    S={...S,...imported};
-    save();
-    toast('✅ Backup importado! Recarregando...');
-    setTimeout(()=>location.reload(),1200);
-  }catch(err){toast('⚠️ Não foi possível ler esse conteúdo');}
-}
-function triggerImportInput(){
-  document.getElementById('backup-file-input').click();
+function updateBackupStatus(msg,pillClass){
+  const lb=document.getElementById('backup-status-lb');
+  const pill=document.getElementById('backup-status-pill');
+  if(lb)lb.textContent=msg;
+  if(pill)pill.className='pill '+(pillClass||'pill-ok');
 }
 
 const DAYS=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
@@ -1133,7 +1260,7 @@ function money(n){return 'R$ '+ (n||0).toLocaleString('pt-BR',{minimumFractionDi
 function moneyShort(n){return 'R$'+(n||0).toLocaleString('pt-BR',{maximumFractionDigits:0});}
 
 // ---------- NAV ----------
-const VIEWS=['home','turno','agenda','semana','time','fat'];
+const VIEWS=['home','turno','agenda','semana','time','fat','report','extra'];
 function navTo(view){
   VIEWS.forEach(v=>document.getElementById('v-'+v).classList.remove('active'));
   document.getElementById('v-'+view).classList.add('active');
@@ -1148,6 +1275,8 @@ function renderView(v){
   if(v==='semana')renderSemana();
   if(v==='time')renderTeam('all');
   if(v==='fat')renderFat();
+  if(v==='report')renderReport_Weekly();
+  if(v==='extra')renderExtra();
 }
 document.querySelectorAll('.toptab,.navbtn').forEach(el=>el.addEventListener('click',()=>navTo(el.dataset.go)));
 
@@ -1161,8 +1290,21 @@ function openModal(id){
       document.getElementById('shift-modal-title').textContent='Escalar chatter';
       document.getElementById('shift-start').value='';
       document.getElementById('shift-end').value='';
-      document.querySelectorAll('#m-shift .chip').forEach(c=>c.classList.remove('sel'));
+      document.getElementById('shift-start2').value='';
+      document.getElementById('shift-end2').value='';
+      document.querySelectorAll('#m-shift .chip[data-day]').forEach(c=>c.classList.remove('sel'));
+      document.querySelectorAll('#m-shift .chip-folga').forEach(c=>c.classList.remove('sel'));
+      // Default folga chip = "Nenhum"
+      const noneChip=document.querySelector('#m-shift .chip-folga[data-folga=""]');
+      if(noneChip)noneChip.classList.add('sel');
     }
+    // Folga chips: single-select behavior
+    document.querySelectorAll('#m-shift .chip-folga').forEach(chip=>{
+      chip.onclick=()=>{
+        document.querySelectorAll('#m-shift .chip-folga').forEach(c=>c.classList.remove('sel'));
+        chip.classList.add('sel');
+      };
+    });
   }
   if(id==='m-overtime'){document.getElementById('ot-date').value=todayKey();document.getElementById('ot-start').value=nowHHMM();}
   if(id==='m-revreport')buildRevReport();
@@ -1185,6 +1327,11 @@ function closeModal(id){
   if(id==='m-shift'){
     document.getElementById('shift-edit-id').value='';
     document.getElementById('shift-modal-title').textContent='Escalar chatter';
+    document.getElementById('shift-start2').value='';
+    document.getElementById('shift-end2').value='';
+    document.querySelectorAll('#m-shift .chip-folga').forEach(c=>c.classList.remove('sel'));
+    const noneChip=document.querySelector('#m-shift .chip-folga[data-folga=""]');
+    if(noneChip)noneChip.classList.add('sel');
   }
 }
 document.querySelectorAll('.modalbg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
@@ -1431,9 +1578,9 @@ function generateMidnightTasks(dateKey){
   if(S.midnightTasks[dateKey])return;
   const worked=getChattersThatWorkedOn(dateKey);
   if(!worked.length)return;
-  S.midnightTasks[dateKey]=worked.map(cid=>{
+  S.midnightTasks[dateKey]=worked.map((cid,i)=>{
     const c=S.chatters.find(ch=>ch.id===cid);
-    return{id:'mt'+Date.now()+Math.random(),chatterId:cid,label:`Relatório: ${c?c.name:'?'}`,done:false};
+    return{id:`mt${Date.now()}${i}${Math.random().toString(36).slice(2,6)}`,chatterId:cid,label:`Relatório: ${c?c.name:'?'}`,done:false};
   });
   save();
 }
@@ -1454,6 +1601,7 @@ function checkMidnightGeneration(){
   const yest=new Date(now);yest.setDate(yest.getDate()-1);
   generateMidnightTasks(fmt(yest));
   generateMidnightTasks(fmt(now));
+  runAutoBackupIfNeeded();
 }
 function renderMidnightPreviewHome(){
   const yest=new Date();yest.setDate(yest.getDate()-1);
@@ -1567,6 +1715,238 @@ function renderFolgaPanel(){
   `;
 }
 
+/* ===========================================================
+   SMART ALERTS — cross-reference all data and surface what
+   needs the manager's attention right now.
+   =========================================================== */
+function getSmartAlerts(){
+  const alerts=[];
+  const today=todayKey();
+  const now=new Date();
+  const todayDayKey=getTodayDayKey();
+  const wd=getWeekDates();
+  const wkStart=fmt(wd[0]),wkEnd=fmt(wd[6]);
+  const wkey=getWeekKey();
+  const goals=S.chatterWeekGoals[wkey]||{};
+  const daysLeft=getDaysRemainingInWeek();
+
+  S.chatters.forEach(c=>{
+    const id=c.id;
+
+    // --- PERFORMANCE ---
+    const target=parseFloat(goals[id])||0;
+    const current=getChatterWeekRevenue(id);
+
+    if(target>0){
+      const pct=current/target;
+      const remaining=target-current;
+      const perDay=daysLeft>0?remaining/daysLeft:remaining;
+
+      if(remaining<=0){
+        alerts.push({id:`ok-${id}-metabatida`,type:'info',icon:'🎯',
+          title:`${c.name} bateu a meta da semana!`,
+          body:`Faturou ${moneyShort(current)} de ${moneyShort(target)} (${Math.round(pct*100)}%). Considere um desafio maior.`,
+          chatterId:id,priority:4});
+      } else if(daysLeft<=3){
+        const urgency=daysLeft<=2?'bad':'warn';
+        const emoji=daysLeft<=2?'🔴':'⚠️';
+        alerts.push({id:`${urgency}-${id}-meta3d`,type:urgency,icon:emoji,
+          title:`${c.name} — ${Math.round(pct*100)}% da meta (${daysLeft}d restantes)`,
+          body:`Falta ${moneyShort(remaining)}. Precisa fazer ${moneyShort(perDay)}/dia.`,
+          chatterId:id,priority:daysLeft<=2?1:2});
+      } else if(daysLeft<=5&&pct<0.4){
+        alerts.push({id:`warn-${id}-metalong`,type:'warn',icon:'📉',
+          title:`${c.name} longe da meta`,
+          body:`${Math.round(pct*100)}% atingido (${moneyShort(current)} de ${moneyShort(target)}). Falta ${moneyShort(remaining)} em ${daysLeft} dias.`,
+          chatterId:id,priority:2});
+      }
+    }
+
+    // Trabalhou/escalado hoje mas sem faturamento após 18h
+    const trabalhouHoje=(S.turnoLog[today]||[]).some(e=>e.chatterId===id&&e.action==='in');
+    const escaladoHoje=S.shifts.some(s=>s.chatterId===id&&s.days&&s.days.includes(todayDayKey));
+    const temFaturamento=S.models.some(m=>(parseFloat(S.revenues[`${id}_${m.id}_${today}`])||0)>0);
+    if((trabalhouHoje||escaladoHoje)&&!temFaturamento&&S.models.length>0&&now.getHours()>=18){
+      alerts.push({id:`warn-${id}-semfat`,type:'warn',icon:'💰',
+        title:`Faturamento de ${c.name} não lançado`,
+        body:`Trabalhou hoje mas sem faturamento registrado ainda.`,
+        chatterId:id,priority:2});
+    }
+
+    // --- PRESENÇA ---
+    const weekAbsences=S.absences.filter(a=>a.chatterId===id&&a.date>=wkStart&&a.date<=wkEnd);
+    const faltas=weekAbsences.filter(a=>a.type==='falta').length;
+    const atrasos=weekAbsences.filter(a=>a.type==='atraso').length;
+    if(faltas>=2){
+      alerts.push({id:`bad-${id}-faltas`,type:'bad',icon:'🚨',
+        title:`${c.name} com ${faltas} faltas esta semana`,
+        body:`Requer atenção imediata. Considere uma conversa.`,
+        chatterId:id,priority:1});
+    } else if(faltas===1&&atrasos>=2){
+      alerts.push({id:`warn-${id}-ocorrencias`,type:'warn',icon:'⚠️',
+        title:`${c.name} com ocorrências repetidas`,
+        body:`1 falta + ${atrasos} atrasos esta semana.`,
+        chatterId:id,priority:2});
+    }
+
+    // Hora extra excessiva na semana
+    let totalOT=0;
+    wd.forEach(d=>totalOT+=getChatterOvertimeOn(id,fmt(d)));
+    if(totalOT>=120){
+      alerts.push({id:`info-${id}-horaextra`,type:'info',icon:'⏱️',
+        title:`${c.name} com muita hora extra`,
+        body:`${totalOT} min de hora extra esta semana. Avalie o equilíbrio.`,
+        chatterId:id,priority:3});
+    }
+
+    // --- DESENVOLVIMENTO ---
+    const yest=new Date(now);yest.setDate(yest.getDate()-1);
+    const orientOntem=S.orientations.filter(o=>o.chatterId===id&&o.date===fmt(yest));
+    const orientHoje=S.orientations.filter(o=>o.chatterId===id&&o.date===today);
+    if(orientOntem.length>0&&orientHoje.length===0&&now.getHours()>=10){
+      alerts.push({id:`info-${id}-followup`,type:'info',icon:'🎯',
+        title:`Follow-up pendente: ${c.name}`,
+        body:`Recebeu orientação ontem mas sem acompanhamento hoje.`,
+        chatterId:id,priority:3});
+    }
+
+    // Treinamentos pendentes há mais de 7 dias (ID único por treinamento)
+    S.chatterTrainings.filter(t=>t.chatterId===id&&!t.done).forEach(t=>{
+      const created=new Date(t.createdAt+'T12:00:00');
+      const days=Math.floor((now-created)/86400000);
+      if(days>=7){
+        alerts.push({id:`info-${id}-train-${t.id}`,type:'info',icon:'📚',
+          title:`Treinamento atrasado: ${c.name}`,
+          body:`"${t.title}" pendente há ${days} dias.`,
+          chatterId:id,priority:3});
+      }
+    });
+
+    // Chatter em teste há mais de 14 dias sem avaliação
+    if((c.level==='treinamento'||c.level==='teste')&&c.createdAt){
+      const daysInTest=Math.floor((now-new Date(c.createdAt))/86400000);
+      if(daysInTest>=14&&!getReportDraft('decisao-'+id)){
+        alerts.push({id:`warn-${id}-semavaliacao`,type:'warn',icon:'🔍',
+          title:`${c.name} em teste sem avaliação`,
+          body:`${daysInTest} dias em teste. Registre a decisão na aba Relatório.`,
+          chatterId:id,priority:2});
+      }
+    }
+  });
+
+  // --- OPERACIONAL ---
+  const escaladosHoje=S.shifts.filter(s=>s.days&&s.days.includes(todayDayKey));
+  const onlineAgora=getCurrentOnline();
+  if(escaladosHoje.length>0&&onlineAgora.length===0&&now.getHours()>=8&&now.getHours()<=23){
+    alerts.push({id:'warn-ninguem-online',type:'warn',icon:'🔴',
+      title:'Nenhum chatter online',
+      body:`${escaladosHoje.length} escalado(s) hoje mas ninguém marcou entrada.`,
+      priority:1});
+  }
+
+  const tomorrow=getTomorrowKey();
+  const folgasAmanha=S.folgas[tomorrow]||[];
+  if(folgasAmanha.length>0&&now.getHours()>=20){
+    const tomorrowDow=new Date(tomorrow+'T12:00:00').getDay();
+    const tomorrowDayKey=DAY_KEYS[tomorrowDow];
+    const escaladosAmanha=S.shifts.filter(s=>s.days&&s.days.includes(tomorrowDayKey)&&!folgasAmanha.includes(s.chatterId));
+    if(escaladosAmanha.length===0){
+      alerts.push({id:'bad-turno-descoberto',type:'bad',icon:'🚨',
+        title:'Turno de amanhã descoberto',
+        body:`${folgasAmanha.length} de folga e ninguém escalado para cobrir.`,
+        priority:1});
+    }
+  }
+
+  // Chatters ativos sem meta definida esta semana
+  const chattersAtivos=S.chatters.filter(c=>c.level!=='treinamento'&&c.level!=='teste');
+  const semMeta=chattersAtivos.filter(c=>!(parseFloat(goals[c.id])>0));
+  if(semMeta.length>0&&chattersAtivos.length>0){
+    alerts.push({id:'info-sem-metas',type:'info',icon:'📋',
+      title:`${semMeta.length} chatter(s) sem meta definida`,
+      body:`Defina metas na aba Faturamento para acompanhar o progresso.`,
+      priority:4});
+  }
+
+  return alerts.sort((a,b)=>a.priority-b.priority);
+}
+function toggleAlertDone(alertId){
+  const today=todayKey();
+  if(!S.smartAlertsDone[today])S.smartAlertsDone[today]=[];
+  const idx=S.smartAlertsDone[today].indexOf(alertId);
+  if(idx===-1)S.smartAlertsDone[today].push(alertId);
+  else S.smartAlertsDone[today].splice(idx,1);
+  save();
+  renderSmartAlerts();
+}
+function saveAlertNote(alertId,value){
+  const key=`${todayKey()}_${alertId}`;
+  if(!S.alertNotes)S.alertNotes={};
+  S.alertNotes[key]=value;
+  save();
+}
+function getAlertNote(alertId){
+  const key=`${todayKey()}_${alertId}`;
+  return(S.alertNotes&&S.alertNotes[key])||'';
+}
+
+function renderSmartAlerts(){
+  const panel=document.getElementById('home-smart-alerts');
+  const badge=document.getElementById('smart-alerts-badge');
+  if(!panel)return;
+  const today=todayKey();
+  const done=S.smartAlertsDone[today]||[];
+  const alerts=getSmartAlerts();
+
+  // Count undone
+  const undone=alerts.filter(a=>!done.includes(a.id)).length;
+  if(badge){
+    badge.textContent=undone>0?`${undone} pendente${undone>1?'s':''}`:alerts.length>0?'tudo feito':'';
+    badge.className='pill '+(undone>0?'pill-bad':alerts.length>0?'pill-ok':'pill-flat');
+  }
+
+  if(!alerts.length){
+    panel.innerHTML=`<div style="display:flex;align-items:center;gap:10px;padding:4px 0">
+      <span style="font-size:18px">✅</span>
+      <div style="font-size:13px;color:var(--text2)">Tudo em ordem — nenhuma atenção necessária agora</div>
+    </div>`;
+    return;
+  }
+
+  const colorMap={bad:'var(--bad)',warn:'var(--warn)',info:'var(--info)'};
+  const bgMap={bad:'var(--bad-soft)',warn:'var(--warn-soft)',info:'var(--info-soft)'};
+
+  panel.innerHTML=alerts.map(a=>{
+    const isDone=done.includes(a.id);
+    const note=getAlertNote(a.id);
+    const borderColor=isDone?'var(--line)':colorMap[a.type]||'var(--line)';
+    const bg=isDone?'var(--bg-soft)':bgMap[a.type]||'var(--bg-soft)';
+    return`<div style="border-radius:10px;padding:11px 12px;background:${bg};border-left:3px solid ${borderColor};margin-bottom:8px;opacity:${isDone?'0.55':'1'};transition:opacity .2s">
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <button onclick="toggleAlertDone('${a.id}')" style="width:22px;height:22px;border-radius:5px;border:2px solid ${isDone?'var(--ok)':borderColor};background:${isDone?'var(--ok)':'transparent'};cursor:pointer;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;font-size:13px">
+          ${isDone?'<span style="color:#fff">✓</span>':''}
+        </button>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span style="font-size:16px">${a.icon}</span>
+            <span style="font-weight:700;font-size:13px;color:var(--text);${isDone?'text-decoration:line-through;color:var(--text3)':''}">${a.title}</span>
+          </div>
+          <div style="font-size:12px;color:var(--text2);margin-top:3px">${a.body}</div>
+          ${a.chatterId&&!isDone?`<button onclick="openChatterDetail('${a.chatterId}')" style="margin-top:6px;font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;padding:0;font-family:var(--font-display)">Ver perfil →</button>`:''}
+          <div style="margin-top:7px">
+            <input class="finput" style="font-size:11.5px;padding:5px 9px;${isDone?'display:none':''}" 
+              placeholder="Ação tomada / observação..." 
+              value="${note}"
+              onblur="saveAlertNote('${a.id}',this.value)"
+              onclick="event.stopPropagation()">
+            ${isDone&&note?`<div style="font-size:11px;color:var(--text3);font-style:italic;margin-top:3px">"${note}"</div>`:''}
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 function renderHome(){
   const today=todayKey();
   const log=S.turnoLog[today]||[];
@@ -1577,6 +1957,7 @@ function renderHome(){
   renderWatchBanner();
   renderMidnightPreviewHome();
   renderFolgaPanel();
+  renderSmartAlerts();
 
   const listEl=document.getElementById('home-roster');
   if(!S.chatters.length){listEl.innerHTML='<div class="empty"><div class="empty-tx">Cadastre chatters na aba Equipe</div></div>';return;}
@@ -1776,7 +2157,6 @@ function renderScheduleForDay(day){
   const shifts=S.shifts.filter(s=>s.days&&s.days.includes(day));
   if(!shifts.length){list.innerHTML='<div class="empty"><div class="empty-tx">Nenhum turno cadastrado</div></div>';return;}
 
-  // Group shifts by chatter so someone with 2+ time blocks on the same day shows as one card
   const byChatter={};
   shifts.forEach(s=>{
     if(!byChatter[s.chatterId])byChatter[s.chatterId]=[];
@@ -1789,22 +2169,24 @@ function renderScheduleForDay(day){
     return{chatterId,chatter:c,shifts:list.sort((a,b)=>a.start.localeCompare(b.start)),sortKey:earliest?earliest.start:'99:99'};
   }).filter(g=>g.chatter).sort((a,b)=>a.sortKey.localeCompare(b.sortKey));
 
+  const DAY_LABELS={seg:'Seg',ter:'Ter',qua:'Qua',qui:'Qui',sex:'Sex',sab:'Sáb',dom:'Dom'};
+
   list.innerHTML='<div style="display:flex;flex-direction:column;gap:8px">'+groups.map(g=>{
     const c=g.chatter;
-    const color=getComputedLevelColor(c.level);
     const multi=g.shifts.length>1;
     const timeBlocks=g.shifts.map(s=>{
       const modelNames=(s.modelIds||[]).map(mid=>{const m=S.models.find(mm=>mm.id===mid);return m?`${m.emoji||'🧩'} ${m.name}`:null;}).filter(Boolean);
-      return`
-      <div>
-        <div style="display:inline-flex;align-items:center;gap:5px">
-          <div style="font-family:var(--font-mono);background:var(--bg-soft);border-radius:7px;padding:5px 9px;font-size:11.5px;font-weight:700;color:var(--warn);white-space:nowrap;cursor:pointer" onclick="openEditShift('${s.id}')">${s.start}–${s.end} ✎</div>
+      const hasSecond=s.start2&&s.end2;
+      return`<div>
+        <div style="display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap">
+          <div style="font-family:var(--font-mono);background:var(--bg-soft);border-radius:7px;padding:5px 9px;font-size:11.5px;font-weight:700;color:var(--warn);white-space:nowrap;cursor:pointer" onclick="openEditShift('${s.id}')">${s.start}–${s.end}${hasSecond?` · ${s.start2}–${s.end2}`:''} ✎</div>
           <button class="btn btn-icon btn-line" style="width:22px;height:22px;flex-shrink:0" onclick="deleteShift('${s.id}')">✕</button>
         </div>
-        ${modelNames.length?`<div style="font-size:10.5px;color:var(--text3);margin-top:3px">${modelNames.join(' · ')}</div>`:''}
+        ${s.folgaDia?`<div style="font-size:10.5px;color:var(--bad);margin-top:2px">🏖️ folga: ${DAY_LABELS[s.folgaDia]||s.folgaDia}</div>`:''}
+        ${modelNames.length?`<div style="font-size:10.5px;color:var(--text3);margin-top:2px">${modelNames.join(' · ')}</div>`:''}
       </div>`;}).join('');
     return`<div class="rrow" style="align-items:flex-start">
-      <div style="display:flex;flex-wrap:wrap;gap:8px;max-width:160px">${timeBlocks}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;max-width:175px">${timeBlocks}</div>
       <div class="rinfo">
         <div class="rname">${c.name}${multi?` <span class="pill pill-info" style="margin-left:5px;font-size:9.5px">2 turnos</span>`:''}</div>
         <span class="pill ${LVLCLASS[c.level]}" style="border:1px solid;margin-top:4px">${c.level}</span>
@@ -2220,9 +2602,12 @@ function openChatterDetail(id){
 }
 function saveChatterDetail(id){
   const c=S.chatters.find(ch=>ch.id===id);if(!c)return;
-  c.level=document.getElementById('dl-level-'+id)?.value||c.level;
-  c.notes=document.getElementById('dl-notes-'+id)?.value||c.notes;
-  c.watchtime=document.getElementById('dl-watch-'+id)?.value||'';
+  const levelEl=document.getElementById('dl-level-'+id);
+  const notesEl=document.getElementById('dl-notes-'+id);
+  const watchEl=document.getElementById('dl-watch-'+id);
+  if(levelEl)c.level=levelEl.value||c.level;
+  if(notesEl)c.notes=notesEl.value; // intentional: allow clearing notes
+  if(watchEl)c.watchtime=watchEl.value; // intentional: allow clearing alarm
   save();toast('✅ Atualizado!');renderTeam(teamFilter);
 }
 function deleteChatter(id){
@@ -2289,6 +2674,321 @@ function refreshChatterDetailTrainings(chatterId){
 /* ===========================================================
    FATURAMENTO
    =========================================================== */
+/* ===========================================================
+   RELATÓRIO SEMANAL COMPLETO
+   Seções 1-4 e 6 são preenchidas automaticamente a partir dos
+   dados do app. Seções 5, 7, 8 são manuais (com rascunho salvo).
+   =========================================================== */
+function renderReport_Weekly(){
+  const wd=getWeekDates();
+  const wkey=getWeekKey();
+  const goals=S.chatterWeekGoals[wkey]||{};
+
+  // Update week range header
+  const rangeEl=document.getElementById('report-wk-range');
+  if(rangeEl)rangeEl.textContent=`${wd[0].getDate()}/${wd[0].getMonth()+1} a ${wd[6].getDate()}/${wd[6].getMonth()+1}`;
+
+  // ---- Section 1: Visão Geral ----
+  let totalRev=0;
+  const chatterRevs=S.chatters.map(c=>{
+    let r=0;wd.forEach(wdate=>S.models.forEach(m=>{r+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(wdate)}`])||0;}));
+    return{c,r};
+  }).filter(x=>x.r>0).sort((a,b)=>b.r-a.r);
+  chatterRevs.forEach(x=>totalRev+=x.r);
+  const avgRev=chatterRevs.length?totalRev/chatterRevs.length:0;
+  const best=chatterRevs[0];
+  const worst=chatterRevs[chatterRevs.length-1];
+  const s1=document.getElementById('rpt-visao-geral');
+  if(s1)s1.innerHTML=`
+    <div class="reprow"><div class="replb">Faturamento total bruto</div><div class="repval" style="color:var(--ok);font-weight:800">${money(totalRev)}</div></div>
+    <div class="reprow"><div class="replb">Média por chatter</div><div class="repval">${money(avgRev)}</div></div>
+    <div class="reprow"><div class="replb">Melhor chatter</div><div class="repval" style="color:var(--ok)">${best?`${best.c.name} (${moneyShort(best.r)})`:'—'}</div></div>
+    <div class="reprow"><div class="replb">Pior chatter</div><div class="repval" style="color:var(--bad)">${worst&&worst!==best?`${worst.c.name} (${moneyShort(worst.r)})`:'—'}</div></div>
+  `;
+
+  // ---- Section 2: Performance por Chatter ----
+  const s2=document.getElementById('rpt-performance');
+  if(s2){
+    const ativos=S.chatters.filter(c=>c.level!=='treinamento'&&c.level!=='teste');
+    if(!ativos.length){s2.innerHTML='<div style="color:var(--text3);font-size:12px">Nenhum chatter ativo cadastrado</div>';}
+    else s2.innerHTML=ativos.map(c=>{
+      let rev=0;wd.forEach(wdate=>S.models.forEach(m=>{rev+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(wdate)}`])||0;}));
+      const avg=rev>0?rev/7:0;
+      const weekAbs=S.absences.filter(a=>a.chatterId===c.id&&a.date>=fmt(wd[0])&&a.date<=fmt(wd[6]));
+      const orients=S.orientations.filter(o=>o.chatterId===c.id&&o.date>=fmt(wd[0])&&o.date<=fmt(wd[6]));
+      const target=parseFloat(goals[c.id])||0;
+      const pct=target>0?Math.round((rev/target)*100):null;
+      const statusColor=weekAbs.filter(a=>a.type==='falta').length>=2?'var(--bad)':rev<avgRev*0.6?'var(--warn)':'var(--ok)';
+      const statusLabel=weekAbs.filter(a=>a.type==='falta').length>=2?'Atenção':rev===0?'Atenção':'Ativo';
+      const modelsWorked=[...new Set(S.shifts.filter(s=>s.chatterId===c.id&&s.days&&s.days.some(dk=>wd.map(w=>DAY_KEYS[w.getDay()]).includes(dk))).flatMap(s=>s.modelIds||[]))].map(mid=>S.models.find(m=>m.id===mid)?.name).filter(Boolean);
+      return`<div style="background:var(--bg-soft);border-radius:10px;padding:12px;margin-bottom:10px;border-left:3px solid ${statusColor}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-weight:700;font-size:14px">${c.name}</div>
+          <span class="pill" style="background:${statusColor}22;color:${statusColor};border:1px solid ${statusColor}">${statusLabel}</span>
+        </div>
+        <div class="reprow"><div class="replb">Cargo / Nível</div><div class="repval">${c.level}</div></div>
+        <div class="reprow"><div class="replb">Modelo(s)</div><div class="repval">${modelsWorked.length?modelsWorked.join(', '):'—'}</div></div>
+        <div class="reprow"><div class="replb">Faturamento semanal</div><div class="repval">${money(rev)}${pct!==null?` <span style="font-size:11px;color:${pct>=100?'var(--ok)':'var(--warn)'}">(${pct}% da meta)</span>`:''}</div></div>
+        <div class="reprow"><div class="replb">Média diária</div><div class="repval">${money(avg)}</div></div>
+        <div class="reprow"><div class="replb">Ocorrências</div><div class="repval">${weekAbs.length?weekAbs.map(a=>({falta:'Falta',atraso:'Atraso',saida_antecipada:'Saída antecip.'})[a.type]||a.type).join(', '):'Nenhuma'}</div></div>
+        <div class="field" style="margin-top:8px"><label class="flabel">Principal erro</label><input class="finput" id="rpt-erro-${c.id}" value="${getReportDraft('erro-'+c.id)}" placeholder="Descreva o erro principal..."></div>
+        <div class="field"><label class="flabel">Ação tomada</label><input class="finput" id="rpt-acao-${c.id}" value="${getReportDraft('acao-'+c.id)}" placeholder="O que você fez a respeito..."></div>
+        ${orients.length?`<div style="margin-top:6px;font-size:11.5px;color:var(--text2)">📋 ${orients.length} orientação(ões) esta semana</div>`:''}
+      </div>`;
+    }).join('');
+  }
+
+  // ---- Section 3: Chatters em Teste ----
+  const testePanel=document.getElementById('rpt-teste-panel');
+  const s3=document.getElementById('rpt-teste');
+  const emTeste=S.chatters.filter(c=>c.level==='treinamento'||c.level==='teste');
+  if(testePanel)testePanel.style.display=emTeste.length?'block':'none';
+  if(s3&&emTeste.length){
+    s3.innerHTML=emTeste.map(c=>{
+      let rev=0;wd.forEach(wdate=>S.models.forEach(m=>{rev+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(wdate)}`])||0;}));
+      const created=c.createdAt?Math.floor((new Date()-new Date(c.createdAt))/86400000):0;
+      const evolucao=getReportDraft('evolucao-'+c.id);
+      const decisao=getReportDraft('decisao-'+c.id);
+      return`<div style="background:var(--bg-soft);border-radius:12px;padding:14px;margin-bottom:12px;border:1.5px solid var(--line)">
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div>
+            <div style="font-weight:700;font-size:14px">${c.name}</div>
+            <div style="font-size:11.5px;color:var(--text3)">${created}d em teste · ${money(rev)} esta semana</div>
+          </div>
+          <span class="pill pill-info" style="font-size:10px">${c.level}</span>
+        </div>
+
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px">Evolução</div>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <button onclick="setReportToggle('evolucao-${c.id}','Boa','rpt-evo-${c.id}')" id="rpt-evo-${c.id}-Boa"
+            style="flex:1;padding:10px;border-radius:9px;border:2px solid ${evolucao==='Boa'?'var(--ok)':'var(--line)'};background:${evolucao==='Boa'?'var(--ok-soft)':'var(--bg)'};cursor:pointer;font-family:var(--font-display);font-weight:700;font-size:13px;color:${evolucao==='Boa'?'var(--ok)':'var(--text2)'}">
+            ✅ Evoluiu bem
+          </button>
+          <button onclick="setReportToggle('evolucao-${c.id}','Ruim','rpt-evo-${c.id}')" id="rpt-evo-${c.id}-Ruim"
+            style="flex:1;padding:10px;border-radius:9px;border:2px solid ${evolucao==='Ruim'?'var(--bad)':'var(--line)'};background:${evolucao==='Ruim'?'var(--bad-soft)':'var(--bg)'};cursor:pointer;font-family:var(--font-display);font-weight:700;font-size:13px;color:${evolucao==='Ruim'?'var(--bad)':'var(--text2)'}">
+            ❌ Evoluiu mal
+          </button>
+        </div>
+
+        <div class="field">
+          <label class="flabel">Por quê? (erros, comportamento, observações)</label>
+          <textarea class="ftext" id="rpt-erroteste-${c.id}" style="min-height:60px" placeholder="Ex: dificuldade em manter ritmo, erros de comunicação..."
+            onblur="saveReportDraftField('erroteste-${c.id}',this.value)">${getReportDraft('erroteste-'+c.id)}</textarea>
+        </div>
+
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin:10px 0 7px">Decisão</div>
+        <div style="display:flex;gap:6px">
+          ${['Aprovar','Continuar','Reprovar'].map(op=>{
+            const colors={Aprovar:'var(--ok)',Continuar:'var(--warn)',Reprovar:'var(--bad)'};
+            const bgs={Aprovar:'var(--ok-soft)',Continuar:'var(--warn-soft)',Reprovar:'var(--bad-soft)'};
+            const sel=decisao===op;
+            return`<button onclick="setReportToggle('decisao-${c.id}','${op}','rpt-dec-${c.id}')" id="rpt-dec-${c.id}-${op}"
+              style="flex:1;padding:8px 4px;border-radius:8px;border:2px solid ${sel?colors[op]:'var(--line)'};background:${sel?bgs[op]:'var(--bg)'};cursor:pointer;font-family:var(--font-display);font-weight:700;font-size:12px;color:${sel?colors[op]:'var(--text2)'}">
+              ${op}
+            </button>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // ---- Section 4: Evolução dos Novos ----
+  const s4=document.getElementById('rpt-evolucao');
+  if(s4&&emTeste.length){
+    const aprovaram=emTeste.filter(c=>getReportDraft('decisao-'+c.id)==='Aprovar').length;
+    const reprovaram=emTeste.filter(c=>getReportDraft('decisao-'+c.id)==='Reprovar').length;
+    const dificuldade=emTeste.filter(c=>getReportDraft('evolucao-'+c.id)==='Ruim'||getReportDraft('evolucao-'+c.id)==='Média').length;
+    const evoluiram=emTeste.filter(c=>getReportDraft('evolucao-'+c.id)==='Boa').length;
+    s4.innerHTML=`
+      <div class="reprow"><div class="replb">Quantos entraram</div><div class="repval">${emTeste.length}</div></div>
+      <div class="reprow"><div class="replb">Evoluíram bem</div><div class="repval" style="color:var(--ok)">${evoluiram}</div></div>
+      <div class="reprow"><div class="replb">Com dificuldade</div><div class="repval" style="color:var(--warn)">${dificuldade}</div></div>
+      <div class="reprow"><div class="replb">Reprovados</div><div class="repval" style="color:var(--bad)">${reprovaram}</div></div>
+    `;
+  } else if(s4){
+    s4.innerHTML='<div style="color:var(--text3);font-size:12px">Nenhum chatter em teste/treinamento</div>';
+  }
+
+  // ---- Section 6: Ações Realizadas ----
+  const s6=document.getElementById('rpt-acoes');
+  if(s6){
+    const wkStart=fmt(wd[0]),wkEnd=fmt(wd[6]);
+    const trainsDone=S.chatterTrainings.filter(t=>t.done&&t.createdAt>=wkStart&&t.createdAt<=wkEnd).length;
+    const corrections=S.orientations.filter(o=>o.date>=wkStart&&o.date<=wkEnd).length;
+    s6.innerHTML=`
+      <div class="reprow"><div class="replb">Treinamentos feitos</div><div class="repval">${trainsDone}</div></div>
+      <div class="reprow"><div class="replb">Orientações/correções</div><div class="repval">${corrections}</div></div>
+    `;
+  }
+
+  // Restore saved draft values for manual fields
+  ['erro1','erro2','erro3','prob1','prob2','plano1','plano2','plano3','ajustes'].forEach(key=>{
+    const el=document.getElementById('rpt-'+key);
+    if(el&&!el.value)el.value=getReportDraft(key)||'';
+  });
+}
+
+function getReportDraft(key){
+  const wkey=getWeekKey();
+  return(S.reportDrafts&&S.reportDrafts[wkey]&&S.reportDrafts[wkey][key])||'';
+}
+function saveReportDraftField(key,value){
+  const wkey=getWeekKey();
+  if(!S.reportDrafts)S.reportDrafts={};
+  if(!S.reportDrafts[wkey])S.reportDrafts[wkey]={};
+  S.reportDrafts[wkey][key]=value;
+  save();
+}
+function setReportToggle(draftKey,value,btnGroupPrefix){
+  saveReportDraftField(draftKey,value);
+  // Update button visual states
+  const options=value==='Boa'||value==='Ruim'?['Boa','Ruim']:['Aprovar','Continuar','Reprovar'];
+  const colorMap={
+    Boa:'var(--ok)',Ruim:'var(--bad)',
+    Aprovar:'var(--ok)',Continuar:'var(--warn)',Reprovar:'var(--bad)'
+  };
+  const bgMap={
+    Boa:'var(--ok-soft)',Ruim:'var(--bad-soft)',
+    Aprovar:'var(--ok-soft)',Continuar:'var(--warn-soft)',Reprovar:'var(--bad-soft)'
+  };
+  options.forEach(op=>{
+    const btn=document.getElementById(`${btnGroupPrefix}-${op}`);
+    if(!btn)return;
+    const sel=op===value;
+    btn.style.borderColor=sel?colorMap[op]:'var(--line)';
+    btn.style.background=sel?bgMap[op]:'var(--bg)';
+    btn.style.color=sel?colorMap[op]:'var(--text2)';
+  });
+}
+function saveReportDraft(){
+  const wkey=getWeekKey();
+  if(!S.reportDrafts)S.reportDrafts={};
+  if(!S.reportDrafts[wkey])S.reportDrafts[wkey]={};
+  const fields=['erro1','erro2','erro3','prob1','prob2','plano1','plano2','plano3','ajustes'];
+  fields.forEach(key=>{
+    const el=document.getElementById('rpt-'+key);
+    if(el)S.reportDrafts[wkey][key]=el.value;
+  });
+  // Save chatter-level text fields (evolucao/decisao are saved immediately via setReportToggle)
+  S.chatters.forEach(c=>{
+    ['erro','acao','erroteste'].forEach(f=>{
+      const el=document.getElementById(`rpt-${f}-${c.id}`);
+      if(el)S.reportDrafts[wkey][`${f}-${c.id}`]=el.value;
+    });
+  });
+  save();
+  toast('💾 Rascunho salvo!');
+}
+function generateFullReport(){
+  saveReportDraft();
+  const wd=getWeekDates();
+  const wkey=getWeekKey();
+  const goals=S.chatterWeekGoals[wkey]||{};
+  const d=key=>getReportDraft(key);
+  const wkStart=fmt(wd[0]),wkEnd=fmt(wd[6]);
+
+  let totalRev=0;
+  const chatterRevs=S.chatters.map(c=>{
+    let r=0;wd.forEach(wdate=>S.models.forEach(m=>{r+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(wdate)}`])||0;}));
+    totalRev+=r;return{c,r};
+  }).sort((a,b)=>b.r-a.r);
+  const avgRev=chatterRevs.filter(x=>x.r>0).length?totalRev/chatterRevs.filter(x=>x.r>0).length:0;
+  const best=chatterRevs[0];
+  const worst=[...chatterRevs].reverse().find(x=>x.r>0);
+
+  const lines=[];
+  lines.push(`📊 RELATÓRIO SEMANAL CHAT`);
+  lines.push(`(DATA: ${wd[0].getDate()}/${wd[0].getMonth()+1} à ${wd[6].getDate()}/${wd[6].getMonth()+1})`);
+  lines.push(``);
+  lines.push(`1. VISÃO GERAL`);
+  lines.push(`● Faturamento total (bruto): ${money(totalRev)}`);
+  lines.push(`● Média por chatter: ${money(avgRev)}`);
+  lines.push(`● Melhor chatter: ${best?`${best.c.name} (${moneyShort(best.r)})`:'—'}`);
+  lines.push(`● Pior chatter: ${worst&&worst!==best?`${worst.c.name} (${moneyShort(worst.r)})`:'—'}`);
+  lines.push(``);
+  lines.push(`2. PERFORMANCE POR CHATTER`);
+  const ativos=S.chatters.filter(c=>c.level!=='treinamento'&&c.level!=='teste');
+  ativos.forEach(c=>{
+    let rev=0;wd.forEach(dd=>S.models.forEach(m=>{rev+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(dd)}`])||0;}));
+    const avg=rev/7;
+    const weekAbs=S.absences.filter(a=>a.chatterId===c.id&&a.date>=wkStart&&a.date<=wkEnd);
+    const target=parseFloat(goals[c.id])||0;
+    const pct=target>0?`${Math.round((rev/target)*100)}% da meta`:'sem meta definida';
+    const statusLabel=weekAbs.filter(a=>a.type==='falta').length>=2?'Atenção':rev===0?'Atenção':'Ativo';
+    const modelsWorked=[...new Set(S.shifts.filter(s=>s.chatterId===c.id&&s.days&&s.days.some(dk=>wd.map(w=>DAY_KEYS[w.getDay()]).includes(dk))).flatMap(s=>s.modelIds||[]))].map(mid=>S.models.find(m=>m.id===mid)?.name).filter(Boolean);
+    lines.push(`Nome: ${c.name}`);
+    lines.push(`● Status: ${statusLabel}`);
+    lines.push(`● Cargo: ${c.level}`);
+    lines.push(`● Modelo: ${modelsWorked.length?modelsWorked.join(', '):'—'}`);
+    lines.push(`● Faturamento semanal: ${money(rev)} (${pct})`);
+    lines.push(`● Média diária: ${money(avg)}`);
+    lines.push(`● Principal erro: ${d('erro-'+c.id)||'—'}`);
+    lines.push(`● Ação tomada: ${d('acao-'+c.id)||'—'}`);
+    lines.push(``);
+  });
+  const emTeste=S.chatters.filter(c=>c.level==='treinamento'||c.level==='teste');
+  if(emTeste.length){
+    lines.push(`3. CHATTERS EM TESTE`);
+    emTeste.forEach(c=>{
+      let rev=0;wd.forEach(dd=>S.models.forEach(m=>{rev+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(dd)}`])||0;}));
+      const created=c.createdAt?Math.floor((new Date()-new Date(c.createdAt))/86400000):0;
+      lines.push(`Nome: ${c.name}`);
+      lines.push(`● Dias em teste: ${created}`);
+      lines.push(`● Faturamento: ${money(rev)}`);
+      lines.push(`● Evolução: ${d('evolucao-'+c.id)||'—'}`);
+      lines.push(`● Principais erros: ${d('erroteste-'+c.id)||'—'}`);
+      lines.push(`● Decisão: ${d('decisao-'+c.id)||'—'}`);
+      lines.push(``);
+    });
+    const evoluiram=emTeste.filter(c=>d('evolucao-'+c.id)==='Boa').length;
+    const dificuldade=emTeste.filter(c=>d('evolucao-'+c.id)==='Ruim'||d('evolucao-'+c.id)==='Média').length;
+    const reprovaram=emTeste.filter(c=>d('decisao-'+c.id)==='Reprovar').length;
+    lines.push(`4. EVOLUÇÃO DOS NOVOS`);
+    lines.push(`● Quantos entraram: ${emTeste.length}`);
+    lines.push(`● Evoluíram bem: ${evoluiram}`);
+    lines.push(`● Com dificuldade: ${dificuldade}`);
+    lines.push(`● Reprovados: ${reprovaram}`);
+    lines.push(``);
+  }
+  lines.push(`5. MEUS PRINCIPAIS ERROS DA SEMANA`);
+  lines.push(`● Erro 1: ${d('erro1')||'—'}`);
+  lines.push(`● Erro 2: ${d('erro2')||'—'}`);
+  lines.push(`● Erro 3: ${d('erro3')||'—'}`);
+  lines.push(``);
+  const trainsDone=S.chatterTrainings.filter(t=>t.done&&t.createdAt>=wkStart&&t.createdAt<=wkEnd).length;
+  const corrections=S.orientations.filter(o=>o.date>=wkStart&&o.date<=wkEnd).length;
+  lines.push(`6. AÇÕES REALIZADAS`);
+  lines.push(`● Treinamentos feitos: ${trainsDone}`);
+  lines.push(`● Correções aplicadas: ${corrections}`);
+  lines.push(`● Ajustes na operação: ${d('ajustes')||'—'}`);
+  lines.push(``);
+  lines.push(`7. PROBLEMAS ENCONTRADOS`);
+  lines.push(`● Problema 1: ${d('prob1')||'—'}`);
+  lines.push(`● Problema 2: ${d('prob2')||'—'}`);
+  lines.push(``);
+  lines.push(`8. PLANO PARA PRÓXIMA SEMANA`);
+  lines.push(`● Ação 1: ${d('plano1')||'—'}`);
+  lines.push(`● Ação 2: ${d('plano2')||'—'}`);
+  lines.push(`● Ação 3: ${d('plano3')||'—'}`);
+
+  const text=lines.join('\n');
+  document.getElementById('rpt-output').value=text;
+  document.getElementById('rpt-output-panel').style.display='block';
+  document.getElementById('rpt-output-panel').scrollIntoView({behavior:'smooth'});
+  toast('✅ Relatório gerado!');
+}
+function copyFullReport(){
+  const ta=document.getElementById('rpt-output');
+  ta.select();ta.setSelectionRange(0,999999);
+  try{
+    document.execCommand('copy');
+    toast('✅ Copiado! Cole no Discord.');
+  }catch(e){
+    if(navigator.clipboard)navigator.clipboard.writeText(ta.value).then(()=>toast('✅ Copiado!')).catch(()=>toast('Selecione o texto manualmente'));
+  }
+}
+
 function renderFat(){
   renderModelsList();renderRevenueTable();
   document.getElementById('fat-date-lb').textContent='Hoje · '+todayKey();
@@ -2409,7 +3109,7 @@ function renderDailyByModel(){
   S.models.forEach(m=>{
     let rowTotal=0;
     const cells=wd.map(d=>{
-      let v=0;S.chatters.forEach(c=>{v+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(d)}`])||0;});
+      let v=0;S.chatters.forEach(c=>{v+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(wdate)}`])||0;});
       rowTotal+=v;
       return`<td style="text-align:right;font-family:var(--font-mono);font-size:11.5px">${v>0?v.toLocaleString('pt-BR',{maximumFractionDigits:0}):'—'}</td>`;
     }).join('');
@@ -2417,7 +3117,7 @@ function renderDailyByModel(){
   });
   html+='<tr class="rtotalrow"><td>TOTAL</td>';
   wd.forEach(d=>{
-    let dayTotal=0;S.chatters.forEach(c=>S.models.forEach(m=>{dayTotal+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(d)}`])||0;}));
+    let dayTotal=0;S.chatters.forEach(c=>S.models.forEach(m=>{dayTotal+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(wdate)}`])||0;}));
     html+=`<td style="text-align:right;font-size:11.5px">${dayTotal>0?dayTotal.toLocaleString('pt-BR',{maximumFractionDigits:0}):'—'}</td>`;
   });
   html+=`<td style="text-align:right">${moneyShort(getWeekTotalRevenue())}</td></tr></tbody></table></div>`;
@@ -2438,7 +3138,7 @@ function renderDailyByChatter(){
   S.chatters.forEach(c=>{
     let rowTotal=0;
     const cells=wd.map(d=>{
-      let v=0;S.models.forEach(m=>{v+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(d)}`])||0;});
+      let v=0;S.models.forEach(m=>{v+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(wdate)}`])||0;});
       rowTotal+=v;
       return`<td style="text-align:right;font-family:var(--font-mono);font-size:11.5px">${v>0?v.toLocaleString('pt-BR',{maximumFractionDigits:0}):'—'}</td>`;
     }).join('');
@@ -2446,14 +3146,14 @@ function renderDailyByChatter(){
   });
   html+='<tr class="rtotalrow"><td>TOTAL</td>';
   wd.forEach(d=>{
-    let dayTotal=0;S.chatters.forEach(c=>S.models.forEach(m=>{dayTotal+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(d)}`])||0;}));
+    let dayTotal=0;S.chatters.forEach(c=>S.models.forEach(m=>{dayTotal+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(wdate)}`])||0;}));
     html+=`<td style="text-align:right;font-size:11.5px">${dayTotal>0?dayTotal.toLocaleString('pt-BR',{maximumFractionDigits:0}):'—'}</td>`;
   });
   html+=`<td style="text-align:right">${moneyShort(getWeekTotalRevenue())}</td></tr></tbody></table></div>`;
   el.innerHTML=html;
 }
 function getWeekTotalRevenue(){
-  let t=0;getWeekDates().forEach(d=>S.chatters.forEach(c=>S.models.forEach(m=>{t+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(d)}`])||0;})));
+  let t=0;getWeekDates().forEach(d=>S.chatters.forEach(c=>S.models.forEach(m=>{t+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(wdate)}`])||0;})));
   return t;
 }
 
@@ -2573,26 +3273,30 @@ function saveChatter(){
 }
 function saveShift(){
   const chatterId=document.getElementById('shift-chatter').value;
-  const start=document.getElementById('shift-start').value,end=document.getElementById('shift-end').value;
+  const start=document.getElementById('shift-start').value;
+  const end=document.getElementById('shift-end').value;
+  const start2=document.getElementById('shift-start2').value||'';
+  const end2=document.getElementById('shift-end2').value||'';
   const days=Array.from(document.querySelectorAll('#m-shift .chip[data-day].sel')).map(c=>c.dataset.day);
   const modelIds=Array.from(document.querySelectorAll('#m-shift .chip[data-model].sel')).map(c=>c.dataset.model);
-  if(!chatterId||!start||!end||!days.length){toast('⚠️ Preencha todos os campos');return;}
+  const folgaDia=Array.from(document.querySelectorAll('#m-shift .chip-folga.sel')).map(c=>c.dataset.folga).find(v=>v!==undefined)||'';
+  if(!chatterId||!start||!end||!days.length){toast('⚠️ Preencha chatter, 1º horário e dias');return;}
   const editId=document.getElementById('shift-edit-id').value;
   if(editId){
     const s=S.shifts.find(sh=>sh.id===editId);
-    if(s){
-      s.chatterId=chatterId;s.start=start;s.end=end;s.days=days;s.modelIds=modelIds;
-      toast('✅ Turno atualizado!');
-    }
+    if(s){s.chatterId=chatterId;s.start=start;s.end=end;s.start2=start2;s.end2=end2;s.days=days;s.modelIds=modelIds;s.folgaDia=folgaDia;toast('✅ Turno atualizado!');}
   } else {
-    S.shifts.push({id:'s'+Date.now(),chatterId,start,end,days,modelIds});
+    S.shifts.push({id:'s'+Date.now(),chatterId,start,end,start2,end2,days,modelIds,folgaDia});
     toast('✅ Turno adicionado!');
   }
   save();
-  closeModal('m-shift');document.querySelectorAll('#m-shift .chip').forEach(c=>c.classList.remove('sel'));
+  closeModal('m-shift');
+  document.querySelectorAll('#m-shift .chip').forEach(c=>c.classList.remove('sel'));
+  document.querySelectorAll('#m-shift .chip-folga').forEach(c=>c.classList.remove('sel'));
   document.getElementById('shift-edit-id').value='';
   document.getElementById('shift-modal-title').textContent='Escalar chatter';
   renderTurno();
+  if(currentViewName()==='extra')renderExtra();
 }
 function openEditShift(shiftId){
   const s=S.shifts.find(sh=>sh.id===shiftId);
@@ -2602,17 +3306,175 @@ function openEditShift(shiftId){
   document.getElementById('shift-modal-title').textContent='Editar turno';
   setTimeout(()=>{
     document.getElementById('shift-chatter').value=s.chatterId;
-    document.getElementById('shift-start').value=s.start;
-    document.getElementById('shift-end').value=s.end;
-    document.querySelectorAll('#m-shift .chip[data-day]').forEach(c=>{
-      c.classList.toggle('sel',(s.days||[]).includes(c.dataset.day));
-    });
-    document.querySelectorAll('#m-shift .chip[data-model]').forEach(c=>{
-      c.classList.toggle('sel',(s.modelIds||[]).includes(c.dataset.model));
-    });
+    document.getElementById('shift-start').value=s.start||'';
+    document.getElementById('shift-end').value=s.end||'';
+    document.getElementById('shift-start2').value=s.start2||'';
+    document.getElementById('shift-end2').value=s.end2||'';
+    document.querySelectorAll('#m-shift .chip[data-day]').forEach(c=>c.classList.toggle('sel',(s.days||[]).includes(c.dataset.day)));
+    document.querySelectorAll('#m-shift .chip[data-model]').forEach(c=>c.classList.toggle('sel',(s.modelIds||[]).includes(c.dataset.model)));
+    document.querySelectorAll('#m-shift .chip-folga').forEach(c=>c.classList.toggle('sel',c.dataset.folga===(s.folgaDia||'')));
   },40);
 }
 function deleteShift(id){S.shifts=S.shifts.filter(s=>s.id!==id);save();renderScheduleForDay(selectedDay);renderAlarmList();toast('Removido');}
+
+/* ===========================================================
+   HORA EXTRA — separate from general revenue.
+   Vagas are generated automatically from shifts that have a
+   folgaDia set. Manager assigns a chatter + logs revenue per slot.
+   =========================================================== */
+function getHoraExtraVagas(){
+  // Collect all shifts that have a folga day — each becomes an "available slot"
+  const vagas=[];
+  S.shifts.forEach(s=>{
+    if(!s.folgaDia)return;
+    const c=S.chatters.find(ch=>ch.id===s.chatterId);
+    if(!c)return;
+    // Slot 1: always the main shift time
+    vagas.push({shiftId:s.id,chatterId:s.chatterId,chatterName:c.name,folgaDia:s.folgaDia,
+      start:s.start,end:s.end,slotIdx:1,
+      label:`${c.name} — ${s.folgaDia.toUpperCase()} (${s.start}–${s.end})`});
+    // Slot 2: if second time exists
+    if(s.start2&&s.end2){
+      vagas.push({shiftId:s.id,chatterId:s.chatterId,chatterName:c.name,folgaDia:s.folgaDia,
+        start:s.start2,end:s.end2,slotIdx:2,
+        label:`${c.name} — ${s.folgaDia.toUpperCase()} (${s.start2}–${s.end2})`});
+    }
+  });
+  return vagas.sort((a,b)=>a.folgaDia.localeCompare(b.folgaDia)||a.start.localeCompare(b.start));
+}
+function getExtraSlotId(shiftId,slotIdx){
+  const wkey=getWeekKey();
+  const slots=S.horaExtraSlots[wkey]||[];
+  return slots.find(x=>x.shiftId===shiftId&&x.slotIdx===slotIdx);
+}
+function saveExtraSlot(shiftId,slotIdx,field,value){
+  const wkey=getWeekKey();
+  if(!S.horaExtraSlots[wkey])S.horaExtraSlots[wkey]=[];
+  let slot=S.horaExtraSlots[wkey].find(x=>x.shiftId===shiftId&&x.slotIdx===slotIdx);
+  if(!slot){
+    slot={id:'ex'+Date.now(),shiftId,slotIdx,chatterId:'',revenue:0,done:false};
+    S.horaExtraSlots[wkey].push(slot);
+  }
+  slot[field]=value;
+  save();
+  renderExtra();
+}
+function toggleExtraDone(shiftId,slotIdx){
+  const wkey=getWeekKey();
+  if(!S.horaExtraSlots[wkey])S.horaExtraSlots[wkey]=[];
+  let slot=S.horaExtraSlots[wkey].find(x=>x.shiftId===shiftId&&x.slotIdx===slotIdx);
+  if(!slot){slot={id:'ex'+Date.now(),shiftId,slotIdx,chatterId:'',revenue:0,done:true};S.horaExtraSlots[wkey].push(slot);}
+  else slot.done=!slot.done;
+  save();renderExtra();
+}
+function renderExtra(){
+  const wd=getWeekDates();
+  document.getElementById('extra-sub').textContent=`Semana ${wd[0].getDate()}/${wd[0].getMonth()+1}–${wd[6].getDate()}/${wd[6].getMonth()+1}`;
+  const wkey=getWeekKey();
+  const vagas=getHoraExtraVagas();
+  const slots=S.horaExtraSlots[wkey]||[];
+  const DAY_LABELS={seg:'Segunda',ter:'Terça',qua:'Quarta',qui:'Quinta',sex:'Sexta',sab:'Sábado',dom:'Domingo'};
+
+  // Badge
+  const vagasBadge=document.getElementById('extra-vagas-badge');
+  if(vagasBadge)vagasBadge.textContent=`${vagas.length} vaga${vagas.length!==1?'s':''}`;
+
+  // Total extra revenue
+  const totalExtra=slots.reduce((sum,x)=>sum+(parseFloat(x.revenue)||0),0);
+  const totalBadge=document.getElementById('extra-total-badge');
+  if(totalBadge)totalBadge.textContent=moneyShort(totalExtra);
+
+  // Vagas disponíveis
+  const vagasList=document.getElementById('extra-vagas-list');
+  if(vagasList){
+    if(!vagas.length){
+      vagasList.innerHTML='<div class="empty"><div class="empty-tx">Nenhuma vaga — cadastre turnos com dia de folga na aba Turno</div></div>';
+    } else {
+      vagasList.innerHTML=vagas.map(v=>{
+        const slot=getExtraSlotId(v.shiftId,v.slotIdx)||{};
+        const atribuido=slot.chatterId?S.chatters.find(c=>c.id===slot.chatterId):null;
+        const isDone=slot.done||false;
+        return`<div style="background:${isDone?'var(--bg-soft)':'var(--warn-soft)'};border-radius:10px;padding:12px;margin-bottom:8px;border-left:3px solid ${isDone?'var(--ok)':'var(--warn)'};opacity:${isDone?'0.7':'1'}">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div>
+              <div style="font-weight:700;font-size:13px">${DAY_LABELS[v.folgaDia]||v.folgaDia} · ${v.start}–${v.end}</div>
+              <div style="font-size:11.5px;color:var(--text2)">Folga de ${v.chatterName}${v.slotIdx===2?' (2º turno)':''}</div>
+            </div>
+            <button onclick="toggleExtraDone('${v.shiftId}',${v.slotIdx})" style="width:26px;height:26px;border-radius:6px;border:2px solid ${isDone?'var(--ok)':'var(--warn)'};background:${isDone?'var(--ok)':'transparent'};cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center">
+              ${isDone?'<span style="color:#fff">✓</span>':''}
+            </button>
+          </div>
+          <div class="field" style="margin-bottom:6px">
+            <label class="flabel">Quem cobriu</label>
+            <select class="fselect" onchange="saveExtraSlot('${v.shiftId}',${v.slotIdx},'chatterId',this.value)">
+              <option value="">— selecionar chatter —</option>
+              ${S.chatters.filter(c=>c.id!==v.chatterId).map(c=>`<option value="${c.id}" ${slot.chatterId===c.id?'selected':''}>${c.name}</option>`).join('')}
+            </select>
+          </div>
+          ${atribuido?`
+          <div class="fgrid2">
+            <div class="field">
+              <label class="flabel">Faturamento (R$)</label>
+              <input type="number" class="finput" style="font-family:var(--font-mono)" value="${slot.revenue||''}" placeholder="0"
+                onblur="saveExtraSlot('${v.shiftId}',${v.slotIdx},'revenue',parseFloat(this.value)||0)">
+            </div>
+            <div class="field">
+              <label class="flabel">Modelo</label>
+              <select class="fselect" onchange="saveExtraSlot('${v.shiftId}',${v.slotIdx},'modelId',this.value)">
+                <option value="">—</option>
+                ${S.models.map(m=>`<option value="${m.id}" ${slot.modelId===m.id?'selected':''}>${m.emoji} ${m.name}</option>`).join('')}
+              </select>
+            </div>
+          </div>`:''}
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // Hora extra atribuída (somente slots com chatter)
+  const atribuidos=vagas.filter(v=>{const s=getExtraSlotId(v.shiftId,v.slotIdx);return s&&s.chatterId;});
+  const atribList=document.getElementById('extra-atribuida-list');
+  if(atribList){
+    if(!atribuidos.length){
+      atribList.innerHTML='<div style="color:var(--text3);font-size:12.5px;padding:8px 0">Nenhuma hora extra atribuída ainda</div>';
+    } else {
+      atribList.innerHTML=atribuidos.map(v=>{
+        const slot=getExtraSlotId(v.shiftId,v.slotIdx)||{};
+        const worker=S.chatters.find(c=>c.id===slot.chatterId);
+        const model=S.models.find(m=>m.id===slot.modelId);
+        return`<div class="reprow">
+          <div>
+            <div style="font-weight:700;font-size:13px">${worker?worker.name:'?'}</div>
+            <div style="font-size:11.5px;color:var(--text2)">${DAY_LABELS[v.folgaDia]||v.folgaDia} · ${v.start}–${v.end}${model?` · ${model.emoji} ${model.name}`:''}</div>
+          </div>
+          <div style="font-family:var(--font-mono);font-weight:800;color:var(--ok)">${moneyShort(parseFloat(slot.revenue)||0)}</div>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // Faturamento breakdown por chatter
+  const fatBreak=document.getElementById('extra-fat-breakdown');
+  if(fatBreak){
+    const byChatter={};
+    atribuidos.forEach(v=>{
+      const slot=getExtraSlotId(v.shiftId,v.slotIdx)||{};
+      if(!slot.chatterId)return;
+      if(!byChatter[slot.chatterId])byChatter[slot.chatterId]={total:0,slots:[]};
+      byChatter[slot.chatterId].total+=parseFloat(slot.revenue)||0;
+      byChatter[slot.chatterId].slots.push(v);
+    });
+    const entries=Object.entries(byChatter);
+    if(!entries.length){
+      fatBreak.innerHTML='<div style="color:var(--text3);font-size:12.5px;padding:8px 0">Nenhum faturamento de hora extra registrado</div>';
+    } else {
+      fatBreak.innerHTML=entries.map(([cid,data])=>{
+        const c=S.chatters.find(ch=>ch.id===cid);
+        return`<div class="reprow"><div class="replb">${c?c.name:'?'}</div><div class="repval" style="color:var(--ok);font-weight:800">${money(data.total)}</div></div>`;
+      }).join('')+`<div class="reprow" style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px"><div class="replb" style="font-weight:700">Total hora extra</div><div class="repval" style="color:var(--ok);font-weight:800">${money(totalExtra)}</div></div>`;
+    }
+  }
+}
 function saveAbsence(){
   const chatterId=document.getElementById('abs-chatter').value,type=document.getElementById('abs-type').value;
   const date=document.getElementById('abs-date').value,note=document.getElementById('abs-note').value.trim();
