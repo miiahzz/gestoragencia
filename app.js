@@ -1180,9 +1180,13 @@ function renderTurnoBoard(){
     const todaysShifts=S.shifts.filter(s=>s.chatterId===c.id&&s.days&&s.days.includes(todayDayKey)).sort((a,b)=>a.start.localeCompare(b.start));
     const shiftsLabel=todaysShifts.length?todaysShifts.map(s=>`${s.start}-${s.end}`).join(' · '):'';
     let actions='';
-    if(status==='offline')actions=`<button class="btn btn-primary btn-xs" onclick="doCheckin('${c.id}','in')">▶ entrou</button>`;
-    else if(status==='online')actions=`<button class="btn btn-danger btn-xs" onclick="doCheckin('${c.id}','out')">■ saiu</button><button class="btn btn-soft btn-xs" onclick="doCheckin('${c.id}','overtime')">⏱</button>`;
-    else if(status==='overtime')actions=`<button class="btn btn-danger btn-xs" onclick="doCheckin('${c.id}','out')">■ saiu</button>`;
+    if(status==='offline'){
+      actions=`<button class="btn btn-primary btn-xs" onclick="doCheckin('${c.id}','in')">▶ entrou</button>`;
+    } else if(status==='online'){
+      actions=`<button class="btn btn-danger btn-xs" onclick="doCheckin('${c.id}','out')">■ saiu</button><button class="btn btn-soft btn-xs" onclick="doCheckin('${c.id}','overtime')">⏱</button>`;
+    } else if(status==='overtime'){
+      actions=`<button class="btn btn-danger btn-xs" onclick="doCheckin('${c.id}','out')">■ saiu</button>`;
+    }
     return`<div class="rrow ${status==='online'?'on':status==='overtime'?'ot':'off'}">
       <div class="ravatar" style="background:${color}22;color:${color}">${c.name.slice(0,2).toUpperCase()}</div>
       <div class="rinfo"><div class="rname">${c.name}${todaysShifts.length>1?' <span class="pill pill-info" style="font-size:9px">2 turnos</span>':''}</div>
@@ -1201,9 +1205,14 @@ function doCheckin(chatterId,action){
     setTimeout(()=>{const sel=document.getElementById('ot-chatter');if(sel)sel.value=chatterId;},40);
     openModal('m-overtime');return;
   }
-  if(action==='out'){openCheckinOut(chatterId);return;}
+  if(action==='out'){
+    S.turnoLog[today].push({id:'tl'+Date.now()+Math.random().toString(36).slice(2,6),chatterId,action:'out',time:nowHHMM()});
+    save();toast(`${c.name} marcou saída`);renderTurnoBoard();renderTodayWorkedList();renderHome();
+    return;
+  }
+  // action === 'in'
   S.turnoLog[today].push({id:'tl'+Date.now()+Math.random().toString(36).slice(2,6),chatterId,action:'in',time:nowHHMM()});
-  save();toast(`✅ ${c.name} marcado como online`);renderTurnoBoard();renderHome();
+  save();toast(`✅ ${c.name} marcado como online`);renderTurnoBoard();renderTodayWorkedList();renderHome();
 }
 function openCheckinOut(chatterId){
   const c=S.chatters.find(ch=>ch.id===chatterId);
