@@ -1176,6 +1176,24 @@ function renderEscritorioPanel(){
         <div style="font-size:12px;color:var(--text3);margin-top:4px">${S.chatters.length?'Configure os turnos na aba Turno para ver quem está online':'Cadastre chatters primeiro na aba Equipe'}</div>
         <button class="btn btn-soft btn-sm" style="margin-top:12px" onclick="navTo('turno')">${S.chatters.length?'📅 Configurar turnos →':'👥 Ir para Equipe →'}</button>
       </div>`:''}
+
+    ${nextUp.length?`
+    <div style="margin-top:10px">
+      <button onclick="toggleNextTurno()" style="width:100%;background:var(--bg-soft);border:1.5px solid var(--line);border-radius:10px;padding:11px 14px;cursor:pointer;font-family:var(--font-display);font-size:13px;font-weight:700;color:var(--text);display:flex;align-items:center;justify-content:space-between">
+        <span>⏳ PRÓXIMO TURNO</span>
+        <span id="next-turno-arrow" style="font-size:11px;color:var(--text3)">▸ ver</span>
+      </button>
+      <div id="next-turno-panel" style="display:none;margin-top:6px">
+        ${nextUp.slice(0,3).map(r=>`
+          <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)">
+            <div style="font-family:var(--font-mono);font-size:15px;font-weight:800;color:var(--warn);min-width:46px">${r.nextW.start}</div>
+            <div style="flex:1">
+              <div style="font-weight:700;font-size:14px">${r.c.name}</div>
+              <div style="font-size:12px;color:var(--text2)">${r.models.map(m=>`${m.emoji||'🧩'} ${m.name}`).join(' · ')||''}</div>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`:''}
   `;
 }
 
@@ -1315,9 +1333,145 @@ function getChatterOvertimeOn(chatterId,dateKey){
    TURNO
    =========================================================== */
 let selectedDay='seg';
+function toggleNextTurno(){
+  const panel=document.getElementById('next-turno-panel');
+  const arrow=document.getElementById('next-turno-arrow');
+  if(!panel)return;
+  const open=panel.style.display==='none';
+  panel.style.display=open?'block':'none';
+  if(arrow)arrow.textContent=open?'▾ fechar':'▸ ver';
+}
+
 function renderTurno(){
-  document.getElementById('turno-sub').textContent='Hoje · '+todayKey();
-  renderTurnoBoard();renderScheduleForDay(selectedDay);renderAlarmList();renderAbsenceList();renderTodayWorkedList();
+  renderTurnoDay();
+  renderTurnoWeek();
+  renderAbsenceList();
+}
+
+function renderTurnoDay(){
+  const today=todayKey();
+  const todayDK=getTodayDayKey();
+  const now=new Date();
+  const nowMins=now.getHours()*60+now.getMinutes();
+  const DAY_FULL={seg:'Segunda',ter:'Terça',qua:'Quarta',qui:'Quinta',sex:'Sexta',sab:'Sábado',dom:'Domingo'};
+  const titleEl=document.getElementById('turno-day-title');
+  if(titleEl)titleEl.textContent=`Hoje · ${DAY_FULL[todayDK]||todayDK}`;
+
+  const el=document.getElementById('turno-day-list');
+  if(!el)return;
+
+  // Collect today's effective roster (shifts + swaps)
+  const seen=new Set();
+  const rows=[];
+
+  S.shifts.filter(s=>(s.days||[]).includes(todayDK)).forEach(s=>{
+    if(seen.has(s.chatterId))return;
+    seen.add(s.chatterId);
+    const gaveAway=S.swaps.some(sw=>sw.date===today&&sw.originalId===s.chatterId);
+    if(gaveAway)return;
+    const c=S.chatters.find(ch=>ch.id===s.chatterId);
+    if(!c)return;
+    const allShifts=S.shifts.filter(x=>x.chatterId===c.id&&(x.days||[]).includes(todayDK));
+    const models=[...new Set(allShifts.flatMap(x=>x.modelIds||[]))].map(mid=>S.models.find(m=>m.id===mid)).filter(Boolean);
+    const windows=allShifts.flatMap(x=>{
+      const w=[{start:x.start,end:x.end}];
+      if(x.start2&&x.end2)w.push({start:x.start2,end:x.end2});
+      return w;
+    }).sort((a,b)=>a.start.localeCompare(b.start));
+    const isOn=['online','overtime'].includes(getChatterStatus(c.id,today));
+    const firstStart=windows[0]?.start||'';
+    const [sh,sm]=(firstStart).split(':').map(Number);
+    const startMins=sh*60+sm;
+    const status=startMins>nowMins?'next':isOn?'on':'done';
+    rows.push({c,windows,models,status,shiftId:allShifts[0]?.id});
+  });
+
+  // Add swaps covering today
+  S.swaps.filter(sw=>sw.date===today).forEach(sw=>{
+    const c=S.chatters.find(ch=>ch.id===sw.covererId);
+    if(!c)return;
+    const orig=S.chatters.find(ch=>ch.id===sw.originalId);
+    const isOn=['online','overtime'].includes(getChatterStatus(c.id,today));
+    rows.push({c,windows:[{start:sw.start,end:sw.end}],models:[],status:isOn?'on':'next',isSwap:true,origName:orig?.name,shiftId:sw.id});
+  });
+
+  rows.sort((a,b)=>(a.windows[0]?.start||'').localeCompare(b.windows[0]?.start||''));
+
+  if(!rows.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:12px 0;text-align:center">Nenhum chatter escalado hoje<br><span style="font-size:11.5px">Use o botão + adicionar acima</span></div>';
+    return;
+  }
+
+  const statusColors={on:'var(--ok)',next:'var(--warn)',done:'var(--text3)'};
+  const statusIcons={on:'🟢',next:'⏳',done:'⚫'};
+
+  el.innerHTML=rows.map(r=>{
+    const timeStr=r.windows.map(w=>`${w.start}–${w.end}`).join(' · ');
+    const modelStr=r.models.map(m=>`${m.emoji||'🧩'} ${m.name}`).join(' · ');
+    const color=statusColors[r.status];
+    return`<div onclick="openEditShiftFromProfile('${r.shiftId}','${r.c.id}')" style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);cursor:pointer">
+      <div style="font-size:18px;flex-shrink:0">${statusIcons[r.status]}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:14.5px">${r.c.name}${r.isSwap?` <span style="font-size:10px;color:var(--info)">(troca p/ ${r.origName||'?'})</span>`:''}</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">${timeStr}${modelStr?' · '+modelStr:''}</div>
+      </div>
+      <span style="font-size:11px;color:${color};font-weight:700">${r.status==='on'?'online':r.status==='next'?'aguardando':'encerrado'}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderTurnoWeek(){
+  const el=document.getElementById('turno-week-list');
+  if(!el)return;
+  const DAY_KEYS_ORDER=['seg','ter','qua','qui','sex','sab','dom'];
+  const DAY_FULL={seg:'Segunda',ter:'Terça',qua:'Quarta',qui:'Quinta',sex:'Sexta',sab:'Sábado',dom:'Domingo'};
+  const todayDK=getTodayDayKey();
+
+  if(!S.chatters.length||!S.shifts.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0">Nenhum turno cadastrado ainda</div>';
+    return;
+  }
+
+  el.innerHTML=DAY_KEYS_ORDER.map(dk=>{
+    const shiftsOfDay=S.shifts.filter(s=>(s.days||[]).includes(dk));
+    if(!shiftsOfDay.length)return'';
+
+    // Group by chatter
+    const seen=new Set();
+    const chattersInDay=[];
+    shiftsOfDay.forEach(s=>{
+      if(seen.has(s.chatterId))return;
+      seen.add(s.chatterId);
+      const c=S.chatters.find(ch=>ch.id===s.chatterId);
+      if(!c)return;
+      const allS=shiftsOfDay.filter(x=>x.chatterId===c.id);
+      const models=[...new Set(allS.flatMap(x=>x.modelIds||[]))].map(mid=>S.models.find(m=>m.id===mid)).filter(Boolean);
+      const windows=allS.flatMap(x=>{
+        const w=[{start:x.start,end:x.end}];
+        if(x.start2&&x.end2)w.push({start:x.start2,end:x.end2});
+        return w;
+      }).sort((a,b)=>a.start.localeCompare(b.start));
+      const folga=allS.find(x=>x.folgaDia===dk);
+      chattersInDay.push({c,windows,models,folga:!!folga,shiftId:allS[0].id});
+    });
+    chattersInDay.sort((a,b)=>a.windows[0].start.localeCompare(b.windows[0].start));
+
+    const isToday=dk===todayDK;
+    return`<div style="margin-bottom:14px">
+      <div style="font-size:11px;font-weight:800;color:${isToday?'var(--ok)':'var(--text3)'};text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px;${isToday?'':''}">
+        ${isToday?'● ':''} ${DAY_FULL[dk]}
+      </div>
+      ${chattersInDay.map(r=>`
+        <div onclick="openEditShiftFromProfile('${r.shiftId}','${r.c.id}')" style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:${isToday?'var(--ok-soft)':'var(--bg-soft)'};border-radius:8px;margin-bottom:5px;cursor:pointer;border-left:3px solid ${isToday?'var(--ok)':'var(--line)'}">
+          <div style="flex:1;min-width:0">
+            <span style="font-weight:700;font-size:13.5px">${r.c.name}</span>
+            <span style="font-size:12px;color:var(--text2);margin-left:8px">${r.windows.map(w=>`${w.start}–${w.end}`).join(' · ')}</span>
+            ${r.folga?`<span style="font-size:10.5px;color:var(--bad);margin-left:6px">folga</span>`:''}
+          </div>
+          <div style="font-size:13px">${r.models.map(m=>m.emoji||'🧩').join('')}</div>
+        </div>`).join('')}
+    </div>`;
+  }).join('');
 }
 /* ===========================================================
    EDIT PUNCH — correct a check-in/out/overtime time that was
@@ -1564,12 +1718,6 @@ function renderAbsenceList(){
     return`<div class="reprow"><div><div style="font-size:13px;font-weight:700">${c?c.name:'?'}</div><div style="font-size:11px;color:var(--text2)">${a.date}${a.note?' · '+a.note:''}</div></div><span class="pill ${tb[a.type]||'pill-flat'}">${tl[a.type]||a.type}</span></div>`;
   }).join('');
 }
-document.getElementById('day-tabs').addEventListener('click',e=>{
-  const b=e.target.closest('.segtab');if(!b)return;
-  selectedDay=b.dataset.day;
-  document.querySelectorAll('#day-tabs .segtab').forEach(x=>x.classList.remove('active'));b.classList.add('active');
-  renderScheduleForDay(selectedDay);
-});
 
 // ---------- alarm (shift change) ----------
 let alarmActive=false;
