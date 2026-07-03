@@ -25,6 +25,8 @@ function migrateState(s){
   if(!s.motivational)s.motivational={};
   if(!s.scheduleRequests)s.scheduleRequests={};
   if(!s.chatterFichas)s.chatterFichas={};
+  if(!s.estudosDraft)s.estudosDraft={};
+  if(!s.estudosHistory)s.estudosHistory=[];
   if(Array.isArray(s.shifts))s.shifts=s.shifts.map(sh=>({start2:'',end2:'',folgaDia:'',modelIds:[],...sh}));
   if(!s.chatterTrainings)s.chatterTrainings=[];
   if(s.hasSeededStudies===undefined)s.hasSeededStudies=false;
@@ -44,7 +46,9 @@ function migrateState(s){
   if(!s.orientations)s.orientations=[];
   if(!s.studies)s.studies=[];
   s.chatters=s.chatters.map(c=>({
-    level:'junior',discord:'',notes:'',watchtime:'',createdAt:new Date().toISOString(),...c
+    level:'junior',discord:'',notes:'',watchtime:'',createdAt:new Date().toISOString(),
+    time:'basico', // 'basico' | 'elite'
+    ...c
   }));
   return s;
 }
@@ -242,7 +246,9 @@ let S={
   weekPrize:{},          // weekKey -> {goal, winner, prize}
   motivational:{},       // weekKey -> {idea, chatters:{id:{issue, help}}}
   scheduleRequests:{},   // weekKey -> [{id, chatterId, text}]
-  chatterFichas:{},      // chatterId -> {tech:{...}, behavior:{...}, potential:{...}, risk:{...}, history:[{date, snapshot}]}
+  chatterFichas:{},      // chatterId -> {tech, behavior, potential, risk, history}
+  estudosDraft:{},       // {fortes, fracos, foco} — current week draft
+  estudosHistory:[],     // [{date, fortes, fracos, foco}] — snapshots over time
 };
 
 /* ===========================================================
@@ -297,7 +303,7 @@ function money(n){return 'R$ '+ (n||0).toLocaleString('pt-BR',{minimumFractionDi
 function moneyShort(n){return 'R$'+(n||0).toLocaleString('pt-BR',{maximumFractionDigits:0});}
 
 // ---------- NAV ----------
-const VIEWS=['home','turno','semana','time','fat','report','extra','teamreports','gestao','fichas'];
+const VIEWS=['home','turno','semana','time','fat','report','extra','teamreports','gestao','fichas','estudos'];
 function navTo(view){
   if(!view)return;
   VIEWS.forEach(v=>{const el=document.getElementById('v-'+v);if(el)el.classList.remove('active');});
@@ -318,6 +324,7 @@ function renderView(v){
   if(v==='teamreports')renderTeamReports();
   if(v==='gestao')renderGestao();
   if(v==='fichas')renderFichas();
+  if(v==='estudos')renderEstudos();
 }
 document.querySelectorAll('.toptab,.navbtn').forEach(el=>el.addEventListener('click',()=>navTo(el.dataset.go)));
 
@@ -1791,25 +1798,43 @@ document.getElementById('team-filter-tabs').addEventListener('click',e=>{
   renderTeam(teamFilter);
 });
 function renderTeam(filter){
+  teamFilter=filter;
   const list=document.getElementById('team-list');
-  let chatters=S.chatters;if(filter!=='all')chatters=chatters.filter(c=>c.level===filter);
+  let chatters=S.chatters;
+  if(filter!=='all')chatters=chatters.filter(c=>c.level===filter);
   if(!chatters.length){list.innerHTML='<div class="empty"><div class="empty-ic">▦</div><div class="empty-tx">Nenhum chatter encontrado</div></div>';return;}
-  list.innerHTML=chatters.map(c=>{
+
+  const eliteGroup=chatters.filter(c=>c.time==='elite');
+  const basicoGroup=chatters.filter(c=>c.time!=='elite');
+
+  const renderCard=c=>{
     const color=getComputedLevelColor(c.level);
     const revWeek=getChatterWeekRevenueTotal(c.id);
     const status=getChatterStatus(c.id,todayKey());
     const otMins=getChatterOvertimeOn(c.id,todayKey());
     const dotColor=status==='online'?'var(--ok)':status==='overtime'?'var(--warn)':'var(--text3)';
+    const timeBadge=c.time==='elite'?`<span class="pill pill-warn" style="font-size:9px">⭐ Elite</span>`:`<span class="pill pill-flat" style="font-size:9px">Básico</span>`;
     return`<div class="teamcard" onclick="openChatterDetail('${c.id}')">
       <div class="ravatar" style="width:42px;height:42px;background:${color}22;color:${color}">${c.name.slice(0,2).toUpperCase()}</div>
       <div class="rinfo">
         <div style="display:flex;align-items:center;gap:6px"><span class="rname">${c.name}</span><div class="tc-status" style="background:${dotColor}"></div></div>
         <div class="rmeta">${c.discord||''} · ${moneyShort(revWeek)} semana</div>
-        <div class="tmeta-row"><span class="pill ${LVLCLASS[c.level]}" style="border:1px solid">${c.level}</span>${otMins>0?`<span class="pill pill-warn">+${otMins}min</span>`:''}${c.watchtime?`<span class="pill pill-info">⏰ ${c.watchtime}</span>`:''}</div>
+        <div class="tmeta-row">${timeBadge}<span class="pill ${LVLCLASS[c.level]}" style="border:1px solid">${c.level}</span>${otMins>0?`<span class="pill pill-warn">+${otMins}min`:''}${c.watchtime?`<span class="pill pill-info">⏰ ${c.watchtime}</span>`:''}</div>
       </div>
       <span style="color:var(--text3);font-size:18px">›</span>
     </div>`;
-  }).join('');
+  };
+
+  let html='';
+  if(eliteGroup.length){
+    html+=`<div style="font-size:11px;font-weight:800;color:var(--warn);text-transform:uppercase;letter-spacing:.06em;margin:4px 0 8px">⭐ Time Elite (${eliteGroup.length})</div>`;
+    html+=eliteGroup.map(renderCard).join('');
+  }
+  if(basicoGroup.length){
+    html+=`<div style="font-size:11px;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin:${eliteGroup.length?'16px':'4px'} 0 8px">Time Básico (${basicoGroup.length})</div>`;
+    html+=basicoGroup.map(renderCard).join('');
+  }
+  list.innerHTML=html;
 }
 function generateWeeklyReport(chatterId){
   const c=S.chatters.find(ch=>ch.id===chatterId);
@@ -1981,6 +2006,12 @@ function openChatterDetail(id){
         <option value="pleno" ${c.level==='pleno'?'selected':''}>Pleno</option>
         <option value="senior" ${c.level==='senior'?'selected':''}>Sênior</option>
       </select>
+    </div>
+    <div class="field"><label class="flabel">Time</label>
+      <div style="display:flex;gap:8px">
+        <button id="dl-time-basico-${id}" onclick="setChatterTime('${id}','basico')" style="flex:1;padding:8px;border-radius:8px;border:2px solid ${(c.time||'basico')==='basico'?'var(--info)':'var(--line)'};background:${(c.time||'basico')==='basico'?'var(--info-soft)':'transparent'};cursor:pointer;font-family:var(--font-display);font-weight:700;font-size:12.5px;color:${(c.time||'basico')==='basico'?'var(--info)':'var(--text2)'}">Time Básico</button>
+        <button id="dl-time-elite-${id}" onclick="setChatterTime('${id}','elite')" style="flex:1;padding:8px;border-radius:8px;border:2px solid ${c.time==='elite'?'var(--warn)':'var(--line)'};background:${c.time==='elite'?'var(--warn-soft)':'transparent'};cursor:pointer;font-family:var(--font-display);font-weight:700;font-size:12.5px;color:${c.time==='elite'?'var(--warn)':'var(--text2)'}">⭐ Elite</button>
+      </div>
     </div>
     <div class="field"><label class="flabel">⏰ Alarme de checagem de login</label>
       <input type="time" class="finput" id="dl-watch-${id}" value="${c.watchtime||''}">
@@ -3526,6 +3557,80 @@ function renderGestao(){
 /* ===========================================================
    FICHAS DOS CHATTERS — ficha seduct format with history
    =========================================================== */
+/* ===========================================================
+   ESTUDOS — personal development tracking with snapshots
+   =========================================================== */
+function renderEstudos(){
+  // Load draft into fields
+  const d=S.estudosDraft||{};
+  const f=document.getElementById('estudos-fortes');
+  const fr=document.getElementById('estudos-fracos');
+  const fo=document.getElementById('estudos-foco');
+  if(f&&!f.value)f.value=d.fortes||'';
+  if(fr&&!fr.value)fr.value=d.fracos||'';
+  if(fo&&!fo.value)fo.value=d.foco||'';
+  renderStudyList();
+  renderEstudosHistorico();
+}
+function setChatterTime(chatterId,time){
+  const c=S.chatters.find(ch=>ch.id===chatterId);
+  if(!c)return;
+  c.time=time;
+  save();
+  // Update button styles
+  const basicoBtn=document.getElementById('dl-time-basico-'+chatterId);
+  const eliteBtn=document.getElementById('dl-time-elite-'+chatterId);
+  if(basicoBtn){
+    basicoBtn.style.borderColor=time==='basico'?'var(--info)':'var(--line)';
+    basicoBtn.style.background=time==='basico'?'var(--info-soft)':'transparent';
+    basicoBtn.style.color=time==='basico'?'var(--info)':'var(--text2)';
+  }
+  if(eliteBtn){
+    eliteBtn.style.borderColor=time==='elite'?'var(--warn)':'var(--line)';
+    eliteBtn.style.background=time==='elite'?'var(--warn-soft)':'transparent';
+    eliteBtn.style.color=time==='elite'?'var(--warn)':'var(--text2)';
+  }
+  toast(`✅ ${c.name} → ${time==='elite'?'⭐ Time Elite':'Time Básico'}`);
+  renderTeam(teamFilter);
+}
+function saveEstudosDraft(){
+  const f=document.getElementById('estudos-fortes');
+  const fr=document.getElementById('estudos-fracos');
+  const fo=document.getElementById('estudos-foco');
+  S.estudosDraft={
+    fortes:f?.value||'',
+    fracos:fr?.value||'',
+    foco:fo?.value||''
+  };
+  save();
+}
+function saveEstudosSnapshot(){
+  saveEstudosDraft();
+  const d=S.estudosDraft;
+  if(!d.fortes&&!d.fracos&&!d.foco){toast('⚠️ Preencha pelo menos um campo');return;}
+  if(!S.estudosHistory)S.estudosHistory=[];
+  S.estudosHistory.push({date:todayKey(),...d});
+  save();
+  renderEstudosHistorico();
+  toast('✅ Snapshot salvo!');
+}
+function renderEstudosHistorico(){
+  const el=document.getElementById('estudos-historico');
+  if(!el)return;
+  const history=S.estudosHistory||[];
+  if(!history.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:12.5px;padding:8px 0">Nenhum snapshot salvo ainda. Preencha os campos acima e clique em "💾 salvar snapshot".</div>';
+    return;
+  }
+  el.innerHTML=[...history].reverse().map((snap,i)=>`
+    <div style="padding:12px 0;border-bottom:1px solid var(--line)">
+      <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:8px">${snap.date}${i===0?' · <span style="color:var(--ok)">mais recente</span>':''}</div>
+      ${snap.fortes?`<div style="margin-bottom:6px"><div style="font-size:11px;font-weight:700;color:var(--ok);margin-bottom:3px">✅ FORTES</div><div style="font-size:13px;color:var(--text);line-height:1.5">${snap.fortes}</div></div>`:''}
+      ${snap.fracos?`<div style="margin-bottom:6px"><div style="font-size:11px;font-weight:700;color:var(--warn);margin-bottom:3px">⚠️ A MELHORAR</div><div style="font-size:13px;color:var(--text);line-height:1.5">${snap.fracos}</div></div>`:''}
+      ${snap.foco?`<div><div style="font-size:11px;font-weight:700;color:var(--info);margin-bottom:3px">🎯 FOCO</div><div style="font-size:13px;color:var(--text)">${snap.foco}</div></div>`:''}
+    </div>`).join('');
+}
+
 function renderFichas(){
   const sel=document.getElementById('ficha-chatter-select');
   if(!sel)return;

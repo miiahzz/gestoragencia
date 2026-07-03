@@ -379,6 +379,7 @@ body{
     <button class="toptab" data-go="extra">H. Extra</button>
     <button class="toptab" data-go="teamreports">Rel. Equipe</button>
     <button class="toptab" data-go="semana">Semana</button>
+    <button class="toptab" data-go="estudos">Estudos</button>
   </nav>
 </header>
 
@@ -811,6 +812,50 @@ body{
     <select class="fselect" id="ficha-chatter-select" onchange="renderFichaChatter(this.value)"></select>
   </div>
   <div id="ficha-content"></div>
+</section>
+
+<!-- ===================== ESTUDOS ===================== -->
+<section class="view" id="v-estudos">
+  <div class="eyebrow">desenvolvimento</div>
+  <div class="view-title">Rotina de Estudos</div>
+  <div class="view-sub">Seu progresso semanal de desenvolvimento pessoal</div>
+
+  <!-- PONTOS FORTES E FRACOS -->
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">💪 Pontos fortes e fracos</div><div class="panel-note">Atualizado semanalmente</div></div>
+      <button class="btn btn-soft btn-xs" onclick="saveEstudosSnapshot()">💾 salvar snapshot</button>
+    </div>
+    <div class="field">
+      <label class="flabel">✅ Pontos fortes</label>
+      <textarea class="ftext" id="estudos-fortes" placeholder="O que você já faz bem..." style="min-height:70px" onblur="saveEstudosDraft()"></textarea>
+    </div>
+    <div class="field">
+      <label class="flabel">⚠️ Pontos a melhorar</label>
+      <textarea class="ftext" id="estudos-fracos" placeholder="O que precisa desenvolver..." style="min-height:70px" onblur="saveEstudosDraft()"></textarea>
+    </div>
+    <div class="field">
+      <label class="flabel">🎯 Foco desta semana</label>
+      <textarea class="ftext" id="estudos-foco" placeholder="Uma coisa principal para focar..." style="min-height:50px" onblur="saveEstudosDraft()"></textarea>
+    </div>
+  </div>
+
+  <!-- LISTA DE MATERIAIS -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">📚 Materiais de estudo</div>
+      <button class="btn btn-primary btn-xs" onclick="openModal('m-study')">+ item</button>
+    </div>
+    <div id="study-list"></div>
+  </div>
+
+  <!-- RELATÓRIO DE EVOLUÇÃO -->
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">📈 Histórico de evolução</div><div class="panel-note">Snapshots salvos cronologicamente</div></div>
+    </div>
+    <div id="estudos-historico"></div>
+  </div>
 </section>
 
 </main>
