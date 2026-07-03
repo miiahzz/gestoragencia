@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#FFFFFF">
 <title>GestorPro</title>
+<script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
 <style>
 /* ============================================================
    GestorPro — clean design tokens
@@ -362,13 +364,12 @@ body{
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-      <span class="pill pill-flat" id="sync-badge" style="font-size:9.5px">conectando…</span>
+      <span class="pill pill-flat" id="sync-badge" style="font-size:9.5px">💾 local</span>
       <div class="topclock" id="hd-clock">00:00</div>
     </div>
   </div>
   <nav class="toptabs" id="toptabs">
     <button class="toptab active" data-go="home">Painel</button>
-    <button class="toptab" data-go="agenda">Agenda</button>
     <button class="toptab" data-go="gestao">Gestão</button>
     <button class="toptab" data-go="fat">Faturamento</button>
     <button class="toptab" data-go="turno">Turno</button>
@@ -416,7 +417,7 @@ body{
   <div class="panel" id="home-midnight-panel" style="display:none">
     <div class="panel-head">
       <div class="panel-title">Relatórios das 00h</div>
-      <button class="btn btn-soft btn-xs" data-go="agenda">ver tudo</button>
+      <button class="btn btn-soft btn-xs" data-go="agenda">ver estudos</button>
     </div>
     <div id="home-midnight-preview"></div>
   </div>
@@ -430,7 +431,7 @@ body{
   <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg-soft);border-radius:10px;margin-bottom:8px">
     <div style="display:flex;align-items:center;gap:8px">
       <span style="font-size:15px">💾</span>
-      <div style="font-size:11px;color:var(--text3)" id="backup-status-lb">sincronizando...</div>
+      <div style="font-size:11px;color:var(--text3)" id="backup-status-lb">dados salvos localmente</div>
     </div>
     <span class="pill pill-ok" id="backup-status-pill" style="font-size:10px">ativo</span>
   </div>
@@ -473,41 +474,7 @@ body{
 </section>
 
 <!-- ===================== AGENDA ===================== -->
-<section class="view" id="v-agenda">
-  <div class="eyebrow">rotina & tarefas</div>
-  <div class="view-title">Agenda do dia</div>
-  <div class="view-sub">Tarefas, orientações e relatórios de fechamento.</div>
 
-  <div class="panel">
-    <div class="panel-head">
-      <div><div class="panel-title">Tarefas de hoje</div><div class="panel-note">Sua checklist geral, não vinculada a chatter</div></div>
-      <button class="btn btn-primary btn-xs" onclick="openModal('m-task')">+ tarefa</button>
-    </div>
-    <div id="daily-tasks-list"></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-head">
-      <div><div class="panel-title">Relatórios das 00h</div><div class="panel-note">Confirme após enviar no Discord</div></div>
-      <span class="pill pill-warn" id="midnight-badge">0 pendentes</span>
-    </div>
-    <div id="midnight-list"></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-head">
-      <div><div class="panel-title">Orientações</div><div class="panel-note">Follow-up automático do dia anterior</div></div>
-      <button class="btn btn-ghost btn-xs" onclick="openModal('m-orient')">+ nova</button>
-    </div>
-    <div id="orient-list"></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-head"><div class="panel-title">Rotina de estudos</div>
-    <button class="btn btn-ghost btn-xs" onclick="openModal('m-study')">+ item</button></div>
-    <div id="study-list"></div>
-  </div>
-</section>
 
 <!-- ===================== SEMANA ===================== -->
 <section class="view" id="v-semana">
@@ -806,6 +773,33 @@ body{
       <button class="btn btn-primary btn-sm" onclick="addScheduleRequest()">+</button>
     </div>
   </div>
+
+  <!-- ROTINA DE ESTUDOS -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">📚 Rotina de estudos</div>
+      <button class="btn btn-ghost btn-xs" onclick="openModal('m-study')">+ item</button>
+    </div>
+    <div id="study-list"></div>
+  </div>
+
+  <!-- ORIENTAÇÕES -->
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">Orientações</div><div class="panel-note">Follow-up do dia anterior</div></div>
+      <button class="btn btn-ghost btn-xs" onclick="openModal('m-orient')">+ nova</button>
+    </div>
+    <div id="orient-list"></div>
+  </div>
+
+  <!-- RELATÓRIOS 00H -->
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">Relatórios das 00h</div></div>
+      <span class="pill pill-warn" id="midnight-badge">0 pendentes</span>
+    </div>
+    <div id="midnight-list"></div>
+  </div>
 </section>
 
 <!-- ===================== FICHAS ===================== -->
@@ -823,7 +817,6 @@ body{
 
 <nav class="bottomnav" id="bottomnav">
   <button class="navbtn active" data-go="home"><span class="navbtn-ic">⌂</span><span class="navbtn-lb">Painel</span></button>
-  <button class="navbtn" data-go="agenda"><span class="navbtn-ic">▤</span><span class="navbtn-lb">Agenda</span><span class="navbtn-dot" id="nav-dot-agenda" style="display:none"></span></button>
   <button class="navbtn" data-go="gestao"><span class="navbtn-ic">📋</span><span class="navbtn-lb">Gestão</span></button>
   <button class="navbtn" data-go="fat"><span class="navbtn-ic">¤</span><span class="navbtn-lb">Fat.</span></button>
   <button class="navbtn" data-go="turno"><span class="navbtn-ic">⇄</span><span class="navbtn-lb">Turno</span><span class="navbtn-dot" id="nav-dot-turno" style="display:none"></span></button>
@@ -1085,7 +1078,6 @@ body{
 
 <div class="toast" id="toast"></div>
 
-<script src="firebase-bundle.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

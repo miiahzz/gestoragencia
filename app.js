@@ -67,14 +67,11 @@ let fbInitAttempts=0;
 function initFirebaseWithRetry(){
   if(typeof firebase==='undefined'&&fbInitAttempts<6){
     fbInitAttempts++;
-    fbSyncStatus='connecting';
-    updateSyncBadge();
     setTimeout(initFirebaseWithRetry,600);
     return;
   }
   if(typeof firebase==='undefined'){
     fbSyncStatus='offline';
-    fbLastErrorMessage='Firebase indisponivel - dados salvos localmente';
     updateSyncBadge();
     return;
   }
@@ -82,16 +79,7 @@ function initFirebaseWithRetry(){
 }
 
 function initFirebase(){
-  // The CDN script tags load the global `firebase` object. If the script
-  // failed to load (network blocked, wrong URL, ad blocker, etc.), `firebase`
-  // won't exist — catching that here gives a clear message instead of a
-  // silent "connecting..." that never resolves.
-  if(typeof firebase==='undefined'){
-    fbSyncStatus='error';
-    fbLastErrorMessage='SDK do Firebase não carregou (verifique conexão com a internet)';
-    updateSyncBadge();
-    return;
-  }
+  if(typeof firebase==='undefined'){fbSyncStatus='offline';updateSyncBadge();return;}
   try{
     const firebaseConfig={
       apiKey:"AIzaSyA5Q5MYehtJAU18ixZLvqS4-gQnNJJD3LI",
@@ -101,25 +89,25 @@ function initFirebase(){
       messagingSenderId:"232929088781",
       appId:"1:232929088781:web:b278bd92bf9bdc857e4c44"
     };
-    // Avoid "Firebase App already exists" if initFirebase ever runs twice
     const app=firebase.apps&&firebase.apps.length?firebase.app():firebase.initializeApp(firebaseConfig);
     fbDb=firebase.firestore();
     fbReady=true;
-    listenToFirestore();
+    // Timeout: if no response in 8s, give up silently
+    const t=setTimeout(()=>{
+      if(fbSyncStatus!=='online'){fbSyncStatus='offline';updateSyncBadge();}
+    },8000);
+    listenToFirestore(t);
   }catch(e){
-    console.error('Firebase init failed',e);
-    fbSyncStatus='error';
-    fbLastErrorMessage=(e&&e.message)?e.message:'Erro desconhecido ao iniciar';
+    fbSyncStatus='offline';
     updateSyncBadge();
   }
 }
 
-function listenToFirestore(){
+function listenToFirestore(connectTimeout){
   if(!fbDb)return;
   fbDb.collection('gestorpro').doc(FIREBASE_DOC_ID).onSnapshot(
     (doc)=>{
-      // Ignore snapshots that arrive within our local-write protection window.
-      // We extend this window on every save() call so rapid checkins are protected.
+      if(connectTimeout)clearTimeout(connectTimeout);
       if(Date.now()<fbIgnoreSnapshotsUntil){
         fbHasReceivedFirstSnapshot=true;
         fbSyncStatus='online';updateSyncBadge();
@@ -159,9 +147,8 @@ function listenToFirestore(){
       runAutoBackupIfNeeded();
     },
     (err)=>{
-      console.error('Firestore listen error',err);
+      if(connectTimeout)clearTimeout(connectTimeout);
       fbSyncStatus='offline';
-      fbLastErrorMessage=(err&&err.code)?`${err.code}: ${err.message||''}`:'Erro ao escutar atualizações';
       updateSyncBadge();
     }
   );
@@ -187,23 +174,22 @@ function updateSyncBadge(){
   const el=document.getElementById('sync-badge');
   if(!el)return;
   const map={
-    connecting:{txt:'conectando…',cls:'pill-flat'},
+    connecting:{txt:'⏳ conectando',cls:'pill-flat'},
     online:{txt:'☁ sincronizado',cls:'pill-ok'},
-    offline:{txt:'⚠ sem conexão',cls:'pill-warn'},
-    error:{txt:'⚠ erro de sync',cls:'pill-bad'}
+    offline:{txt:'💾 local',cls:'pill-flat'},
+    error:{txt:'💾 local',cls:'pill-flat'}
   };
-  const s=map[fbSyncStatus]||map.connecting;
+  const s=map[fbSyncStatus]||map.offline;
   el.textContent=s.txt;
   el.className='pill '+s.cls;
   el.style.cursor='pointer';
   el.onclick=function(){
     if(fbSyncStatus==='online'){
-      toast('☁ Dados sincronizando normalmente');
-    } else if(fbLastErrorMessage){
-      toast('⚠ '+fbLastErrorMessage,5000);
+      toast('☁ Sincronizado com Firebase');
     } else {
-      toast('Tentando reconectar...');
-      initFirebase();
+      toast('Tentando reconectar…');
+      fbInitAttempts=0;
+      initFirebaseWithRetry();
     }
   };
 }
@@ -311,7 +297,7 @@ function money(n){return 'R$ '+ (n||0).toLocaleString('pt-BR',{minimumFractionDi
 function moneyShort(n){return 'R$'+(n||0).toLocaleString('pt-BR',{maximumFractionDigits:0});}
 
 // ---------- NAV ----------
-const VIEWS=['home','turno','agenda','semana','time','fat','report','extra','teamreports','gestao','fichas'];
+const VIEWS=['home','turno','semana','time','fat','report','extra','teamreports','gestao','fichas'];
 function navTo(view){
   VIEWS.forEach(v=>document.getElementById('v-'+v).classList.remove('active'));
   document.getElementById('v-'+view).classList.add('active');
@@ -322,7 +308,6 @@ function navTo(view){
 function renderView(v){
   if(v==='home')renderHome();
   if(v==='turno')renderTurno();
-  if(v==='agenda')renderAgenda();
   if(v==='semana')renderSemana();
   if(v==='time')renderTeam('all');
   if(v==='fat')renderFat();
@@ -506,7 +491,7 @@ function getComputedLevelColor(level){
    =========================================================== */
 function renderDailyTasks(){
   const el=document.getElementById('daily-tasks-list');
-  const today=todayKey();
+  if(!el)return; // element removed — tasks now managed in Gestão
   const tasks=S.dailyTasks[today]||[];
   if(!tasks.length){el.innerHTML='<div class="empty"><div class="empty-ic">✅</div><div class="empty-tx">Nenhuma tarefa para hoje.<br>Adicione itens da sua rotina de gestão.</div></div>';return;}
   const pb={alta:'pill-bad',media:'pill-warn',baixa:'pill-flat'};
@@ -1761,7 +1746,7 @@ function exportCalendar(){
 /* ===========================================================
    AGENDA
    =========================================================== */
-function renderAgenda(){renderDailyTasks();renderMidnightList();renderOrientList();renderStudyList();}
+function renderAgenda(){renderStudyList();renderOrientList();renderMidnightList();}
 function renderOrientList(){
   const el=document.getElementById('orient-list');
   const today=todayKey();const todayO=S.orientations.filter(o=>o.date===today);
@@ -3530,9 +3515,11 @@ function renderGestao(){
   const mrEl=document.getElementById('model-requests-text');
   if(mrEl&&!mrEl.value)mrEl.value=S.modelRequests[wkey]||'';
   renderScheduleRequests();
-  // Populate sched-req-chatter
   const sel=document.getElementById('sched-req-chatter');
   if(sel&&!sel.options.length)sel.innerHTML=S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  renderStudyList();
+  renderOrientList();
+  renderMidnightList();
 }
 
 /* ===========================================================
