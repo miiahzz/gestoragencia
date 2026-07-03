@@ -299,8 +299,10 @@ function moneyShort(n){return 'R$'+(n||0).toLocaleString('pt-BR',{maximumFractio
 // ---------- NAV ----------
 const VIEWS=['home','turno','semana','time','fat','report','extra','teamreports','gestao','fichas'];
 function navTo(view){
-  VIEWS.forEach(v=>document.getElementById('v-'+v).classList.remove('active'));
-  document.getElementById('v-'+view).classList.add('active');
+  if(!view)return;
+  VIEWS.forEach(v=>{const el=document.getElementById('v-'+v);if(el)el.classList.remove('active');});
+  const target=document.getElementById('v-'+view);
+  if(target)target.classList.add('active');
   document.querySelectorAll('.toptab').forEach(t=>t.classList.toggle('active',t.dataset.go===view));
   document.querySelectorAll('.navbtn').forEach(t=>t.classList.toggle('active',t.dataset.go===view));
   renderView(view);
@@ -404,11 +406,9 @@ function updateClock(){
 function updateNavDots(){
   const yest=new Date();yest.setDate(yest.getDate()-1);
   const ykey=fmt(yest);
-  const midnightPending=(S.midnightTasks[todayKey()]||[]).filter(t=>!t.done).length+(S.midnightTasks[ykey]||[]).filter(t=>!t.done).length;
-  const dailyPending=(S.dailyTasks[todayKey()]||[]).filter(t=>!t.done).length;
-  document.getElementById('nav-dot-agenda').style.display=(midnightPending>0)?'block':'none';
   const watchPending=Object.values(S.watchAlerts[todayKey()]||{}).filter(s=>s==='pending').length;
-  document.getElementById('nav-dot-turno').style.display=(watchPending>0)?'block':'none';
+  const dot=document.getElementById('nav-dot-turno');
+  if(dot)dot.style.display=(watchPending>0)?'block':'none';
 }
 
 /* ===========================================================
@@ -464,6 +464,7 @@ function confirmWatch(chatterId,status){
 
 function renderWatchBanner(){
   const wrap=document.getElementById('home-watch-wrap');
+  if(!wrap)return;
   const pending=getWatchAlertsToday();
   if(!pending.length){wrap.innerHTML='';return;}
   wrap.innerHTML=`<div class="watchbanner">
