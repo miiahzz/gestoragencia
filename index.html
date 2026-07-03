@@ -386,18 +386,10 @@ body{
   <div class="eyebrow">status ao vivo</div>
   <div class="view-title">Painel</div>
 
-  <!-- ESCRITÓRIO AGORA -->
+  <!-- ESCRITÓRIO + PRÓXIMO TURNO -->
   <div class="panel" id="home-escritorio"></div>
 
-  <!-- STATS -->
-  <div class="statgrid">
-    <div class="statcell"><div class="statval" id="s-online">0</div><div class="statlb">Online agora</div></div>
-    <div class="statcell"><div class="statval" id="s-rev">R$0</div><div class="statlb">Faturado hoje</div></div>
-    <div class="statcell"><div class="statval" id="s-ot">0</div><div class="statlb">Em hora extra</div></div>
-    <div class="statcell"><div class="statval" id="s-abs">0</div><div class="statlb">Ocorrências/sem.</div></div>
-  </div>
-
-  <!-- ALERTAS URGENTES (pinned) -->
+  <!-- ALERTAS URGENTES -->
   <div class="panel" id="home-urgent-panel" style="display:none;border-color:var(--bad)">
     <div class="panel-head">
       <div><div class="panel-title" style="color:var(--bad)">🚨 Urgente</div></div>
@@ -406,8 +398,8 @@ body{
     <div id="home-urgent-list"></div>
   </div>
 
-  <!-- ATENÇÃO NECESSÁRIA -->
-  <div class="panel" style="margin-bottom:14px">
+  <!-- ATENÇÃO / AGENDA -->
+  <div class="panel">
     <div class="panel-head">
       <div><div class="panel-title">🔔 Atenção necessária</div></div>
       <span id="smart-alerts-badge" class="pill pill-bad" style="font-size:10px"></span>
@@ -415,7 +407,7 @@ body{
     <div id="home-smart-alerts"></div>
   </div>
 
-  <!-- WATCH / CHECAGEM -->
+  <!-- WATCH -->
   <div id="home-watch-wrap"></div>
 
   <!-- RELATÓRIOS 00H -->
@@ -432,21 +424,11 @@ body{
     <div id="home-folga-content"></div>
   </div>
 
-  <!-- NOTA RÁPIDA -->
-  <div class="panel">
-    <div class="panel-head"><div class="panel-title">Nota rápida</div></div>
-    <textarea class="ftext" id="quicknote" placeholder="Anotação rápida do turno..." style="min-height:56px"></textarea>
-    <button class="btn btn-primary btn-sm" style="margin-top:9px" onclick="saveQuickNote()">Salvar nota</button>
-  </div>
-
-  <!-- BACKUP STATUS -->
+  <!-- BACKUP -->
   <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg-soft);border-radius:10px;margin-bottom:8px">
     <div style="display:flex;align-items:center;gap:8px">
       <span style="font-size:15px">💾</span>
-      <div>
-        <div style="font-size:12.5px;font-weight:600;color:var(--text)">Backup automático</div>
-        <div style="font-size:11px;color:var(--text3)" id="backup-status-lb">sincronizando...</div>
-      </div>
+      <div style="font-size:11px;color:var(--text3)" id="backup-status-lb">sincronizando...</div>
     </div>
     <span class="pill pill-ok" id="backup-status-pill" style="font-size:10px">ativo</span>
   </div>
@@ -2062,158 +2044,67 @@ function renderSmartAlerts(){
 }
 
 function renderHome(){
-  const today=todayKey();
-  const log=S.turnoLog[today]||[];
-  const online=getCurrentOnline();
-  document.getElementById('s-online').textContent=online.length;
-  document.getElementById('s-rev').textContent=moneyShort(getTodayTotalRevenue());
-  document.getElementById('s-ot').textContent=log.filter(e=>e.action==='overtime').length;
-  document.getElementById('s-abs').textContent=getWeekAbsencesData().length;
   renderWatchBanner();
   renderMidnightPreviewHome();
   renderFolgaPanel();
   renderEscritorioPanel();
   renderUrgentPanel();
   renderSmartAlerts();
-  const notes=S.quickNotes;
-  if(notes.length){const el=document.getElementById('quicknote');if(el)el.value=notes[notes.length-1].text||'';}
 }
 
 function renderEscritorioPanel(){
   const el=document.getElementById('home-escritorio');
   if(!el)return;
-  const today=todayKey();
   const todayDK=getTodayDayKey();
-  const now=new Date();
-  const nowMins=now.getHours()*60+now.getMinutes();
+  const today=todayKey();
 
-  // Get all shifts for today
-  const todayShifts=S.shifts.filter(s=>(s.days||[]).includes(todayDK));
-
-  // Build full picture of today's roster
-  // For each unique chatter with a shift today, determine their status
-  const seen=new Set();
-  const roster=[];
-  todayShifts.forEach(s=>{
-    if(seen.has(s.chatterId))return;
-    seen.add(s.chatterId);
-    const c=S.chatters.find(ch=>ch.id===s.chatterId);
-    if(!c)return;
-    const status=getChatterStatus(c.id,today);
-    const isOn=['online','overtime'].includes(status);
-    // All shift windows for this chatter today
-    const allShifts=todayShifts.filter(x=>x.chatterId===c.id);
-    const windows=allShifts.flatMap(sh=>{
-      const w=[{start:sh.start,end:sh.end}];
-      if(sh.start2&&sh.end2)w.push({start:sh.start2,end:sh.end2});
-      return w;
-    }).sort((a,b)=>a.start.localeCompare(b.start));
-    const models=[...new Set(allShifts.flatMap(sh=>sh.modelIds||[]))].map(mid=>S.models.find(m=>m.id===mid)).filter(Boolean);
-    // Current window
-    const currentW=windows.find(w=>{
-      const [sh,sm]=w.start.split(':').map(Number);
-      const [eh,em]=w.end.split(':').map(Number);
-      return nowMins>=sh*60+sm&&nowMins<eh*60+em;
-    });
-    // Next window
-    const nextW=windows.find(w=>{
-      const [sh,sm]=w.start.split(':').map(Number);
-      return sh*60+sm>nowMins;
-    });
-    roster.push({c,status,isOn,windows,currentW,nextW,models});
-  });
-
-  // Also include swaps for today
-  S.swaps.filter(sw=>sw.date===today).forEach(sw=>{
-    if(seen.has('swap_'+sw.covererId+'_'+sw.shiftId))return;
-    seen.add('swap_'+sw.covererId+'_'+sw.shiftId);
-    const c=S.chatters.find(ch=>ch.id===sw.covererId);
-    if(!c)return;
-    const status=getChatterStatus(c.id,today);
-    const isOn=['online','overtime'].includes(status);
-    const [sh,sm]=(sw.start||'').split(':').map(Number);
-    const [eh,em]=(sw.end||'').split(':').map(Number);
-    const currentW=!isNaN(sh)&&nowMins>=sh*60+sm&&nowMins<eh*60+em?{start:sw.start,end:sw.end}:null;
-    const nextW=!isNaN(sh)&&sh*60+sm>nowMins?{start:sw.start,end:sw.end}:null;
-    const origC=S.chatters.find(ch=>ch.id===sw.originalId);
-    roster.push({c,status,isOn,windows:[{start:sw.start,end:sw.end}],currentW,nextW,models:[],isSwap:true,origName:origC?.name});
-  });
-
-  const onlineNow=roster.filter(r=>r.isOn);
-  const nextUp=roster.filter(r=>!r.isOn&&r.nextW).sort((a,b)=>a.nextW.start.localeCompare(b.nextW.start));
-  const offToday=roster.filter(r=>!r.isOn&&!r.nextW);
+  const online=getCurrentOnline();
+  const scheduledToday=getCurrentScheduledToday();
+  const nextUp=scheduledToday
+    .filter(c=>!online.find(o=>o.id===c.id))
+    .map(c=>({c,next:getNextShiftToday(c.id),
+      models:[...new Set(S.shifts.filter(s=>s.chatterId===c.id&&(s.days||[]).includes(todayDK)).flatMap(s=>s.modelIds||[]))].map(mid=>S.models.find(m=>m.id===mid)).filter(Boolean)
+    }))
+    .filter(x=>x.next)
+    .sort((a,b)=>a.next.localeCompare(b.next));
 
   el.innerHTML=`
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <div style="font-weight:800;font-size:15px">🖥️ Escritório hoje</div>
-      <div style="display:flex;gap:6px">
-        <button class="btn btn-ghost btn-xs" onclick="openModal('m-manual-status')">⚙️</button>
-        <button class="btn btn-soft btn-xs" onclick="navTo('turno')">escala →</button>
-      </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="font-weight:800;font-size:15px">🖥️ Escritório</div>
+      <button class="btn btn-ghost btn-xs" onclick="navTo('turno')">escala →</button>
     </div>
 
-    ${onlineNow.length?`
-      <div style="margin-bottom:16px">
-        <div style="font-size:11px;font-weight:700;color:var(--ok);text-transform:uppercase;letter-spacing:.06em;margin-bottom:9px">🟢 Trabalhando agora · ${onlineNow.length}</div>
-        ${onlineNow.map(r=>`
-          <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)">
-            <div style="width:10px;height:10px;border-radius:50%;background:var(--ok);flex-shrink:0;box-shadow:0 0 0 3px rgba(23,115,80,.2);animation:pulse 2s infinite"></div>
-            <div style="flex:1;min-width:0">
-              <div style="font-weight:700;font-size:14.5px;line-height:1.2">${r.c.name}${r.isSwap?` <span style="font-size:10px;color:var(--info)">(troca)</span>`:''}</div>
-              <div style="font-size:12px;color:var(--text2);margin-top:2px">
-                ${r.currentW?`${r.currentW.start}–${r.currentW.end}`:''}
-                ${r.models.length?' · '+r.models.map(m=>`${m.emoji||''}${m.name}`).join(', '):''}
-              </div>
-            </div>
-            ${r.currentW?`<div style="font-family:var(--font-mono);font-size:11.5px;color:var(--text3)">até ${r.currentW.end}</div>`:''}
-          </div>`).join('')}
-      </div>`:`
-      <div style="text-align:center;padding:20px 0 14px">
-        <div style="font-size:30px;margin-bottom:6px">💤</div>
-        <div style="font-size:13px;color:var(--text3)">Ninguém online agora</div>
-      </div>`}
+    ${online.length?
+      online.map(c=>{
+        const shifts=S.shifts.filter(s=>s.chatterId===c.id&&(s.days||[]).includes(todayDK));
+        const models=[...new Set(shifts.flatMap(s=>s.modelIds||[]))].map(mid=>S.models.find(m=>m.id===mid)).filter(Boolean);
+        const ends=shifts.flatMap(s=>s.end2&&s.end2>s.end?[s.end2]:[s.end]).sort().reverse()[0]||'';
+        return`<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)">
+          <div style="width:9px;height:9px;border-radius:50%;background:var(--ok);animation:pulse 2s infinite;flex-shrink:0"></div>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:14px">${c.name}</div>
+            <div style="font-size:11.5px;color:var(--text2)">${models.map(m=>`${m.emoji||''} ${m.name}`).join(' · ')||'online'}${ends?' · até '+ends:''}</div>
+          </div>
+        </div>`;
+      }).join('')
+    :`<div style="font-size:13px;color:var(--text3);padding:8px 0">Ninguém online agora</div>`}
 
-    ${nextUp.length?`
-      <div style="margin-bottom:4px">
-        <div style="font-size:11px;font-weight:700;color:var(--warn);text-transform:uppercase;letter-spacing:.06em;margin-bottom:9px">⏳ Próximos a entrar</div>
-        ${nextUp.map(r=>`
-          <div style="display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)">
-            <div style="width:10px;height:10px;border-radius:50%;background:var(--line);flex-shrink:0"></div>
-            <div style="flex:1;min-width:0">
-              <div style="font-weight:700;font-size:14px">${r.c.name}</div>
-              <div style="font-size:12px;color:var(--text2);margin-top:2px">${r.models.length?r.models.map(m=>`${m.emoji||''}${m.name}`).join(', '):''}</div>
-            </div>
-            <div style="font-family:var(--font-mono);font-size:14px;font-weight:800;color:var(--warn)">${r.nextW.start}</div>
-          </div>`).join('')}
-      </div>`:''}
-
-    ${!onlineNow.length&&!nextUp.length?`
-      <div style="text-align:center;padding:20px 0 14px">
-        <div style="font-size:30px;margin-bottom:6px">💤</div>
-        <div style="font-size:13.5px;font-weight:600;color:var(--text)">Ninguém escalado hoje</div>
-        <div style="font-size:12px;color:var(--text3);margin-top:4px">${S.chatters.length?'Configure os turnos na aba Turno para ver quem está online':'Cadastre chatters primeiro na aba Equipe'}</div>
-        <button class="btn btn-soft btn-sm" style="margin-top:12px" onclick="navTo('turno')">${S.chatters.length?'📅 Configurar turnos →':'👥 Ir para Equipe →'}</button>
-      </div>`:''}
-
-    ${nextUp.length?`
-    <div style="margin-top:10px">
-      <button onclick="toggleNextTurno()" style="width:100%;background:var(--bg-soft);border:1.5px solid var(--line);border-radius:10px;padding:11px 14px;cursor:pointer;font-family:var(--font-display);font-size:13px;font-weight:700;color:var(--text);display:flex;align-items:center;justify-content:space-between">
-        <span>⏳ PRÓXIMO TURNO</span>
-        <span id="next-turno-arrow" style="font-size:11px;color:var(--text3)">▸ ver</span>
-      </button>
-      <div id="next-turno-panel" style="display:none;margin-top:6px">
-        ${nextUp.slice(0,3).map(r=>`
-          <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)">
-            <div style="font-family:var(--font-mono);font-size:15px;font-weight:800;color:var(--warn);min-width:46px">${r.nextW.start}</div>
-            <div style="flex:1">
-              <div style="font-weight:700;font-size:14px">${r.c.name}</div>
-              <div style="font-size:12px;color:var(--text2)">${r.models.map(m=>`${m.emoji||'🧩'} ${m.name}`).join(' · ')||''}</div>
-            </div>
-          </div>`).join('')}
-      </div>
-    </div>`:''}
+    <button onclick="toggleNextTurno()" style="width:100%;margin-top:12px;background:var(--bg-soft);border:1.5px solid var(--line);border-radius:9px;padding:10px 14px;cursor:pointer;font-family:var(--font-display);font-size:13px;font-weight:700;color:var(--text);display:flex;align-items:center;justify-content:space-between">
+      <span>⏳ PRÓXIMO TURNO</span>
+      <span id="next-turno-arrow" style="font-size:11px;color:var(--text3)">▸</span>
+    </button>
+    <div id="next-turno-panel" style="display:none;margin-top:2px">
+      ${nextUp.length?nextUp.slice(0,3).map(r=>`
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)">
+          <div style="font-family:var(--font-mono);font-size:15px;font-weight:800;color:var(--warn);min-width:50px">${r.next}</div>
+          <div style="font-weight:700;font-size:14px;flex:1">${r.c.name}</div>
+          <div style="font-size:17px">${r.models.map(m=>m.emoji||'🧩').join('')}</div>
+        </div>`).join('')
+      :`<div style="font-size:12.5px;color:var(--text3);padding:10px 0">Nenhum próximo turno agendado</div>`}
+    </div>
   `;
 }
+
 
 /* ===========================================================
    URGENT ALERTS — alerts the user pins to the home screen top
@@ -2441,53 +2332,52 @@ function renderTurnoDay(){
 function renderTurnoWeek(){
   const el=document.getElementById('turno-week-list');
   if(!el)return;
-  const DAY_KEYS_ORDER=['seg','ter','qua','qui','sex','sab','dom'];
-  const DAY_FULL={seg:'Segunda',ter:'Terça',qua:'Quarta',qui:'Quinta',sex:'Sexta',sab:'Sábado',dom:'Domingo'};
-  const todayDK=getTodayDayKey();
 
-  if(!S.chatters.length||!S.shifts.length){
-    el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0">Nenhum turno cadastrado ainda</div>';
+  if(!S.shifts.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0">Nenhum turno cadastrado ainda.<br>Use o botão + adicionar acima.</div>';
     return;
   }
 
-  el.innerHTML=DAY_KEYS_ORDER.map(dk=>{
-    const shiftsOfDay=S.shifts.filter(s=>(s.days||[]).includes(dk));
-    if(!shiftsOfDay.length)return'';
+  // Group shifts by model — each model gets a block
+  // Shifts with no model go to a "Sem modelo" group
+  const modelGroups={};
+  S.models.forEach(m=>{ modelGroups[m.id]={model:m,shifts:[]}; });
+  modelGroups['_none']={model:null,shifts:[]};
 
-    // Group by chatter
-    const seen=new Set();
-    const chattersInDay=[];
-    shiftsOfDay.forEach(s=>{
-      if(seen.has(s.chatterId))return;
-      seen.add(s.chatterId);
-      const c=S.chatters.find(ch=>ch.id===s.chatterId);
-      if(!c)return;
-      const allS=shiftsOfDay.filter(x=>x.chatterId===c.id);
-      const models=[...new Set(allS.flatMap(x=>x.modelIds||[]))].map(mid=>S.models.find(m=>m.id===mid)).filter(Boolean);
-      const windows=allS.flatMap(x=>{
-        const w=[{start:x.start,end:x.end}];
-        if(x.start2&&x.end2)w.push({start:x.start2,end:x.end2});
-        return w;
-      }).sort((a,b)=>a.start.localeCompare(b.start));
-      const folga=allS.find(x=>x.folgaDia===dk);
-      chattersInDay.push({c,windows,models,folga:!!folga,shiftId:allS[0].id});
+  S.shifts.forEach(s=>{
+    const mids=s.modelIds&&s.modelIds.length?s.modelIds:[null];
+    mids.forEach(mid=>{
+      const key=mid||'_none';
+      if(!modelGroups[key])modelGroups[key]={model:S.models.find(m=>m.id===mid)||null,shifts:[]};
+      if(!modelGroups[key].shifts.find(x=>x.id===s.id))
+        modelGroups[key].shifts.push(s);
     });
-    chattersInDay.sort((a,b)=>a.windows[0].start.localeCompare(b.windows[0].start));
+  });
 
-    const isToday=dk===todayDK;
-    return`<div style="margin-bottom:14px">
-      <div style="font-size:11px;font-weight:800;color:${isToday?'var(--ok)':'var(--text3)'};text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px;${isToday?'':''}">
-        ${isToday?'● ':''} ${DAY_FULL[dk]}
+  const blocks=Object.values(modelGroups).filter(g=>g.shifts.length);
+
+  el.innerHTML=blocks.map(g=>{
+    const m=g.model;
+    // Sort shifts by start time
+    const sorted=[...g.shifts].sort((a,b)=>a.start.localeCompare(b.start));
+
+    const rows=sorted.map(s=>{
+      const c=S.chatters.find(ch=>ch.id===s.chatterId);
+      const name=c?c.name:'—';
+      const t1=`${s.start}–${s.end}`;
+      const t2=s.start2&&s.end2?`${s.start2}–${s.end2}`:'';
+      const folgaLabel=s.folgaDia?` <span style="font-size:10px;color:var(--bad)">(folga ${s.folgaDia})</span>`:'';
+      return`<div onclick="openEditShiftFromProfile('${s.id}','${s.chatterId}')" style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);cursor:pointer">
+        <div style="font-family:var(--font-mono);font-size:12.5px;color:var(--warn);min-width:110px;flex-shrink:0">${t1}${t2?' · '+t2:''}</div>
+        <div style="font-size:13.5px;font-weight:700;flex:1">${name}${folgaLabel}</div>
+      </div>`;
+    }).join('');
+
+    return`<div style="margin-bottom:18px">
+      <div style="font-size:14px;font-weight:800;margin-bottom:8px;padding-bottom:5px;border-bottom:2px solid var(--line)">
+        ${m?`${m.emoji||'🧩'} ${m.name}`:'Sem modelo'}
       </div>
-      ${chattersInDay.map(r=>`
-        <div onclick="openEditShiftFromProfile('${r.shiftId}','${r.c.id}')" style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:${isToday?'var(--ok-soft)':'var(--bg-soft)'};border-radius:8px;margin-bottom:5px;cursor:pointer;border-left:3px solid ${isToday?'var(--ok)':'var(--line)'}">
-          <div style="flex:1;min-width:0">
-            <span style="font-weight:700;font-size:13.5px">${r.c.name}</span>
-            <span style="font-size:12px;color:var(--text2);margin-left:8px">${r.windows.map(w=>`${w.start}–${w.end}`).join(' · ')}</span>
-            ${r.folga?`<span style="font-size:10.5px;color:var(--bad);margin-left:6px">folga</span>`:''}
-          </div>
-          <div style="font-size:13px">${r.models.map(m=>m.emoji||'🧩').join('')}</div>
-        </div>`).join('')}
+      ${rows}
     </div>`;
   }).join('');
 }
