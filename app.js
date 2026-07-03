@@ -9,14 +9,22 @@ const SCHEMA_VERSION=2; // bump this when S structure changes to trigger migrati
 // When we add new fields to S, old saved data won't have them.
 // This function fills in any missing fields with safe defaults.
 function migrateState(s){
-  // v1 -> v2: added folgas, chatterTrainings, hasSeededStudies
   if(!s.folgas)s.folgas={};
   if(!s.reportDrafts)s.reportDrafts={};
   if(!s.smartAlertsDone)s.smartAlertsDone={};
   if(!s.alertNotes)s.alertNotes={};
   if(!s.horaExtraSlots)s.horaExtraSlots={};
   if(!s.swaps)s.swaps=[];
-  // Migrate shifts to support start2/end2/folgaDia fields
+  if(!s.morningRoutine)s.morningRoutine=[];
+  if(!s.problemsToday)s.problemsToday={};
+  if(!s.demandas)s.demandas={};
+  if(!s.trainings)s.trainings=[];
+  if(!s.weekEvolutions)s.weekEvolutions={};
+  if(!s.modelRequests)s.modelRequests={};
+  if(!s.weekPrize)s.weekPrize={};
+  if(!s.motivational)s.motivational={};
+  if(!s.scheduleRequests)s.scheduleRequests={};
+  if(!s.chatterFichas)s.chatterFichas={};
   if(Array.isArray(s.shifts))s.shifts=s.shifts.map(sh=>({start2:'',end2:'',folgaDia:'',modelIds:[],...sh}));
   if(!s.chatterTrainings)s.chatterTrainings=[];
   if(s.hasSeededStudies===undefined)s.hasSeededStudies=false;
@@ -35,10 +43,8 @@ function migrateState(s){
   if(!s.absences)s.absences=[];
   if(!s.orientations)s.orientations=[];
   if(!s.studies)s.studies=[];
-  // ensure every chatter has required fields
   s.chatters=s.chatters.map(c=>({
-    level:'junior',discord:'',notes:'',watchtime:'',createdAt:new Date().toISOString(),
-    ...c
+    level:'junior',discord:'',notes:'',watchtime:'',createdAt:new Date().toISOString(),...c
   }));
   return s;
 }
@@ -237,10 +243,20 @@ let S={
   hasSeededStudies:false,
   folgas:{},             // date -> [chatterId, ...] — manual day-off registrations
   reportDrafts:{},        // weekKey -> {field: value} — manual fields of weekly report
-  smartAlertsDone:{},    // dateKey -> [alertId, ...] — alerts marked as done today
+  smartAlertsDone:{},    // dateKey -> [alertId, ...]
   alertNotes:{},         // 'date_alertId' -> text
-  horaExtraSlots:{},     // weekKey -> [{id, shiftId, slotIdx, chatterId, revenue, modelId, done}]
-  swaps:[]               // [{id, date, covererId, originalId, start, end, createdAt}]
+  horaExtraSlots:{},     // weekKey -> [{...}]
+  swaps:[],              // [{id, date, covererId, originalId, ...}]
+  morningRoutine:[],     // [{id, text, done}] — repeats daily
+  problemsToday:{},      // dateKey -> [{id, text, done}]
+  demandas:{},           // dateKey -> [{id, text, done}]
+  trainings:[],          // [{id, title, date, days:[{day, script}]}]
+  weekEvolutions:{},     // weekKey -> [{id, label, done, missed}]
+  modelRequests:{},      // weekKey -> [{id, text}]
+  weekPrize:{},          // weekKey -> {goal, winner, prize}
+  motivational:{},       // weekKey -> {idea, chatters:{id:{issue, help}}}
+  scheduleRequests:{},   // weekKey -> [{id, chatterId, text}]
+  chatterFichas:{},      // chatterId -> {tech:{...}, behavior:{...}, potential:{...}, risk:{...}, history:[{date, snapshot}]}
 };
 
 /* ===========================================================
@@ -295,7 +311,7 @@ function money(n){return 'R$ '+ (n||0).toLocaleString('pt-BR',{minimumFractionDi
 function moneyShort(n){return 'R$'+(n||0).toLocaleString('pt-BR',{maximumFractionDigits:0});}
 
 // ---------- NAV ----------
-const VIEWS=['home','turno','agenda','semana','time','fat','report','extra','teamreports'];
+const VIEWS=['home','turno','agenda','semana','time','fat','report','extra','teamreports','gestao','fichas'];
 function navTo(view){
   VIEWS.forEach(v=>document.getElementById('v-'+v).classList.remove('active'));
   document.getElementById('v-'+view).classList.add('active');
@@ -313,6 +329,8 @@ function renderView(v){
   if(v==='report')renderReport_Weekly();
   if(v==='extra')renderExtra();
   if(v==='teamreports')renderTeamReports();
+  if(v==='gestao')renderGestao();
+  if(v==='fichas')renderFichas();
 }
 document.querySelectorAll('.toptab,.navbtn').forEach(el=>el.addEventListener('click',()=>navTo(el.dataset.go)));
 
@@ -3239,6 +3257,393 @@ function openManualStatusModal(){
       </div>
     </div>`;
   }).join('');
+}
+
+/* ===========================================================
+   GESTÃO — morning routine, problems, demands, training,
+   evolutions, prize, motivational, requests, schedules
+   =========================================================== */
+
+// ---- ROTINA DA MANHÃ (repeats daily, same tasks) ----
+function renderMorningRoutine(){
+  const el=document.getElementById('morning-routine-list');
+  if(!el)return;
+  const today=todayKey();
+  // Clone routine items with today's done state
+  if(!S.problemsToday[today+'_routine'])S.problemsToday[today+'_routine']=[];
+  const doneIds=new Set(S.problemsToday[today+'_routine']);
+  if(!S.morningRoutine.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Adicione itens da rotina abaixo</div>';return;}
+  el.innerHTML=S.morningRoutine.map(item=>{
+    const done=doneIds.has(item.id);
+    return`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
+      <button onclick="toggleRoutineItem('${item.id}')" style="width:22px;height:22px;border-radius:5px;border:2px solid ${done?'var(--ok)':'var(--line)'};background:${done?'var(--ok)':'transparent'};cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px">${done?'<span style="color:#fff">✓</span>':''}</button>
+      <span style="flex:1;font-size:13.5px;${done?'text-decoration:line-through;color:var(--text3)':''}">${item.text}</span>
+      <button onclick="removeMorningRoutineItem('${item.id}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px">✕</button>
+    </div>`;
+  }).join('');
+}
+function toggleRoutineItem(id){
+  const today=todayKey();const key=today+'_routine';
+  if(!S.problemsToday[key])S.problemsToday[key]=[];
+  const idx=S.problemsToday[key].indexOf(id);
+  if(idx===-1)S.problemsToday[key].push(id);else S.problemsToday[key].splice(idx,1);
+  save();renderMorningRoutine();
+}
+function addMorningRoutine(){
+  const inp=document.getElementById('morning-routine-input');
+  const text=inp?.value.trim();if(!text)return;
+  S.morningRoutine.push({id:'mr'+Date.now(),text});
+  inp.value='';save();renderMorningRoutine();
+}
+function removeMorningRoutineItem(id){
+  S.morningRoutine=S.morningRoutine.filter(x=>x.id!==id);
+  save();renderMorningRoutine();
+}
+
+// ---- DAILY TASK LIST HELPER (problems + demandas) ----
+function renderDailyList(storeKey,listId,badgeId){
+  const el=document.getElementById(listId);
+  if(!el)return;
+  const today=todayKey();
+  const items=S[storeKey][today]||[];
+  const badge=document.getElementById(badgeId);
+  const pending=items.filter(x=>!x.done).length;
+  if(badge)badge.textContent=pending>0?`${pending} pendente${pending>1?'s':''}` :'';
+  if(!items.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Nenhum item</div>';return;}
+  el.innerHTML=items.map(item=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
+      <button onclick="toggleDailyItem('${storeKey}','${item.id}')" style="width:22px;height:22px;border-radius:5px;border:2px solid ${item.done?'var(--ok)':'var(--line)'};background:${item.done?'var(--ok)':'transparent'};cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px">${item.done?'<span style="color:#fff">✓</span>':''}</button>
+      <span style="flex:1;font-size:13.5px;${item.done?'text-decoration:line-through;color:var(--text3)':''}">${item.text}</span>
+      <button onclick="removeDailyItem('${storeKey}','${item.id}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px">✕</button>
+    </div>`).join('');
+}
+function toggleDailyItem(store,id){
+  const today=todayKey();
+  const items=S[store][today]||[];
+  const item=items.find(x=>x.id===id);
+  if(item)item.done=!item.done;
+  save();renderGestao();
+}
+function removeDailyItem(store,id){
+  const today=todayKey();
+  S[store][today]=(S[store][today]||[]).filter(x=>x.id!==id);
+  save();renderGestao();
+}
+function addProblem(){
+  const inp=document.getElementById('problems-input');
+  const text=inp?.value.trim();if(!text)return;
+  const today=todayKey();
+  if(!S.problemsToday[today])S.problemsToday[today]=[];
+  S.problemsToday[today].push({id:'p'+Date.now(),text,done:false});
+  inp.value='';save();renderGestao();
+}
+function addDemanda(){
+  const inp=document.getElementById('demandas-input');
+  const text=inp?.value.trim();if(!text)return;
+  const today=todayKey();
+  if(!S.demandas[today])S.demandas[today]=[];
+  S.demandas[today].push({id:'d'+Date.now(),text,done:false});
+  inp.value='';save();renderGestao();
+}
+
+// ---- TREINAMENTO ----
+function saveTraining(){
+  const title=document.getElementById('train-title')?.value.trim();
+  const date=document.getElementById('train-date')?.value;
+  const script=document.getElementById('train-script')?.value.trim();
+  if(!title||!date){toast('⚠️ Preencha título e data');return;}
+  S.trainings.push({id:'tr'+Date.now(),title,date,days:[{day:1,script:script||''}]});
+  save();closeModal('m-add-training');renderGestao();toast('✅ Treinamento criado!');
+}
+function renderTrainings(){
+  const el=document.getElementById('training-list');
+  if(!el)return;
+  if(!S.trainings.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Nenhum treinamento. Use + novo acima.</div>';return;}
+  el.innerHTML=S.trainings.map(t=>{
+    const today=todayKey();
+    const daysAgo=Math.floor((new Date(today)-new Date(t.date))/86400000);
+    const currentDay=daysAgo>=0?daysAgo+1:null;
+    const dayScript=currentDay?t.days.find(d=>d.day===currentDay)?.script||null:null;
+    return`<div style="background:var(--warn-soft);border-radius:10px;padding:12px;margin-bottom:8px;border-left:3px solid var(--warn)">
+      <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleTrainingDetail('${t.id}')">
+        <div>
+          <div style="font-weight:700;font-size:14px">🎓 ${t.title}</div>
+          <div style="font-size:11.5px;color:var(--text2)">${t.date}${currentDay?` · Dia ${currentDay}`:' · não iniciado'}</div>
+        </div>
+        <span style="font-size:11px;color:var(--warn)">▸</span>
+      </div>
+      <div id="train-detail-${t.id}" style="display:none;margin-top:10px">
+        ${currentDay&&dayScript?`<div style="background:var(--bg-soft);border-radius:8px;padding:10px;font-size:13px;margin-bottom:8px"><strong>Roteiro do dia ${currentDay}:</strong><br>${dayScript}</div>`:''}
+        ${currentDay&&!dayScript?`<div style="font-size:12.5px;color:var(--text3);margin-bottom:8px">Sem roteiro para o dia ${currentDay}. Adicione abaixo:</div>`:''}
+        <textarea class="ftext" placeholder="Roteiro do dia ${currentDay||1}..." style="min-height:60px;font-size:12px" id="train-script-${t.id}"></textarea>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button class="btn btn-soft btn-sm" onclick="saveTrainingDayScript('${t.id}',${currentDay||1})">💾 Salvar roteiro</button>
+          <button class="btn btn-ghost btn-sm" onclick="deleteTraining('${t.id}')">Excluir</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+function toggleTrainingDetail(id){const el=document.getElementById('train-detail-'+id);if(el)el.style.display=el.style.display==='none'?'block':'none';}
+function saveTrainingDayScript(trainingId,day){
+  const t=S.trainings.find(x=>x.id===trainingId);if(!t)return;
+  const script=document.getElementById('train-script-'+trainingId)?.value.trim()||'';
+  const existing=t.days.find(d=>d.day===day);
+  if(existing)existing.script=script;else t.days.push({day,script});
+  save();renderTrainings();toast('✅ Roteiro salvo!');
+}
+function deleteTraining(id){if(!confirm('Excluir treinamento?'))return;S.trainings=S.trainings.filter(t=>t.id!==id);save();renderGestao();}
+
+// ---- EVOLUÇÕES SEMANAIS ----
+function renderWeekEvolutions(){
+  const el=document.getElementById('week-evolution-list');
+  if(!el)return;
+  const wkey=getWeekKey();
+  const items=S.weekEvolutions[wkey]||[];
+  if(!items.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Adicione itens de evolução. Ao fim da semana um aviso aparecerá para os não feitos.</div>';return;}
+  el.innerHTML=items.map(item=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
+      <button onclick="toggleEvolution('${item.id}')" style="width:26px;height:26px;border-radius:6px;border:2px solid ${item.done?'var(--ok)':item.missed?'var(--bad)':'var(--line)'};background:${item.done?'var(--ok)':item.missed?'var(--bad)':'transparent'};cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px">${item.done?'<span style="color:#fff">✓</span>':item.missed?'<span style="color:#fff">✕</span>':''}</button>
+      <span style="flex:1;font-size:13.5px;color:${item.done?'var(--ok)':item.missed?'var(--bad)':'var(--text)'}">${item.label}</span>
+      <button onclick="removeEvolution('${item.id}')" style="background:none;border:none;color:var(--text3);cursor:pointer">✕</button>
+    </div>`).join('');
+}
+function toggleEvolution(id){
+  const wkey=getWeekKey();
+  const items=S.weekEvolutions[wkey]||[];
+  const item=items.find(x=>x.id===id);if(!item)return;
+  if(!item.done&&!item.missed){item.done=true;item.missed=false;}
+  else if(item.done){item.done=false;item.missed=true;}
+  else{item.done=false;item.missed=false;}
+  save();renderWeekEvolutions();
+}
+function removeEvolution(id){const wkey=getWeekKey();S.weekEvolutions[wkey]=(S.weekEvolutions[wkey]||[]).filter(x=>x.id!==id);save();renderWeekEvolutions();}
+function addWeekEvolution(){
+  const label=prompt('Nome do item de evolução:');if(!label)return;
+  const wkey=getWeekKey();
+  if(!S.weekEvolutions[wkey])S.weekEvolutions[wkey]=[];
+  S.weekEvolutions[wkey].push({id:'ev'+Date.now(),label,done:false,missed:false});
+  save();renderWeekEvolutions();
+}
+
+// ---- PREMIAÇÃO ----
+function renderPrizePanel(){
+  const el=document.getElementById('prize-panel');if(!el)return;
+  const wkey=getWeekKey();
+  const prize=S.weekPrize[wkey]||{goal:'',winner:'',prize:''};
+  el.innerHTML=`
+    <div class="field"><label class="flabel">Objetivo da semana</label><input class="finput" id="prize-goal" value="${prize.goal||''}" placeholder="Ex: bater R$10k em equipe" onblur="savePrize()"></div>
+    <div class="field"><label class="flabel">Prêmio</label><input class="finput" id="prize-prize" value="${prize.prize||''}" placeholder="Ex: R$50 bônus" onblur="savePrize()"></div>
+    <div class="field"><label class="flabel">Vencedor (preencher ao fim da semana)</label>
+      <select class="fselect" id="prize-winner" onchange="savePrize()">
+        <option value="">— selecionar —</option>
+        ${S.chatters.map(c=>`<option value="${c.id}" ${prize.winner===c.id?'selected':''}>${c.name}</option>`).join('')}
+      </select>
+    </div>
+    ${prize.winner?`<div style="text-align:center;padding:10px;background:var(--ok-soft);border-radius:10px;font-size:15px;font-weight:800;color:var(--ok)">🏆 ${S.chatters.find(c=>c.id===prize.winner)?.name||'?'}</div>`:''}`;
+}
+function savePrize(){
+  const wkey=getWeekKey();
+  S.weekPrize[wkey]={
+    goal:document.getElementById('prize-goal')?.value||'',
+    prize:document.getElementById('prize-prize')?.value||'',
+    winner:document.getElementById('prize-winner')?.value||''
+  };save();
+}
+
+// ---- MOTIVACIONAL ----
+function renderMotivacional(){
+  const el=document.getElementById('motivational-panel');if(!el)return;
+  const wkey=getWeekKey();
+  if(!S.motivational[wkey])S.motivational[wkey]={idea:'',chatters:{}};
+  const data=S.motivational[wkey];
+  el.innerHTML=`
+    <div class="field"><label class="flabel">💡 Ideia motivacional da semana (para a equipe toda)</label>
+      <textarea class="ftext" id="motiv-idea" placeholder="Ex: esta semana o foco é energia e ritmo..." style="min-height:60px" onblur="saveMotivacional()">${data.idea||''}</textarea>
+    </div>
+    <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin:10px 0 8px">Dificuldades individuais</div>
+    ${S.chatters.map(c=>{
+      const cd=data.chatters[c.id]||{issue:'',help:''};
+      return`<div style="background:var(--bg-soft);border-radius:9px;padding:10px;margin-bottom:8px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:7px">${c.name}</div>
+        <div class="field"><label class="flabel">Dificuldade</label><input class="finput" id="motiv-issue-${c.id}" value="${cd.issue||''}" placeholder="O que está com dificuldade..." onblur="saveMotivacional()"></div>
+        <div class="field"><label class="flabel">O que fiz pra ajudar</label><input class="finput" id="motiv-help-${c.id}" value="${cd.help||''}" placeholder="Ação tomada..." onblur="saveMotivacional()"></div>
+      </div>`;
+    }).join('')}`;
+}
+function saveMotivacional(){
+  const wkey=getWeekKey();
+  if(!S.motivational[wkey])S.motivational[wkey]={idea:'',chatters:{}};
+  S.motivational[wkey].idea=document.getElementById('motiv-idea')?.value||'';
+  S.chatters.forEach(c=>{
+    S.motivational[wkey].chatters[c.id]={
+      issue:document.getElementById('motiv-issue-'+c.id)?.value||'',
+      help:document.getElementById('motiv-help-'+c.id)?.value||''
+    };
+  });save();
+}
+function saveModelRequests(){
+  const wkey=getWeekKey();
+  S.modelRequests[wkey]=document.getElementById('model-requests-text')?.value||'';
+  save();
+}
+
+// ---- REQUISIÇÕES DE HORÁRIOS ----
+function renderScheduleRequests(){
+  const el=document.getElementById('schedule-requests-list');if(!el)return;
+  const wkey=getWeekKey();
+  const items=S.scheduleRequests[wkey]||[];
+  if(!items.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Nenhuma requisição</div>';return;}
+  el.innerHTML=items.map(item=>{
+    const c=S.chatters.find(ch=>ch.id===item.chatterId);
+    return`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
+      <div style="flex:1"><span style="font-weight:700">${c?c.name:'?'}</span><span style="font-size:12px;color:var(--text2);margin-left:8px">${item.text}</span></div>
+      <button onclick="removeScheduleRequest('${item.id}')" style="background:none;border:none;color:var(--text3);cursor:pointer">✕</button>
+    </div>`;
+  }).join('');
+  // Populate chatter select
+  const sel=document.getElementById('sched-req-chatter');
+  if(sel&&!sel.options.length){sel.innerHTML=S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');}
+}
+function addScheduleRequest(){
+  const cid=document.getElementById('sched-req-chatter')?.value;
+  const text=document.getElementById('sched-req-text')?.value.trim();
+  if(!cid||!text)return;
+  const wkey=getWeekKey();
+  if(!S.scheduleRequests[wkey])S.scheduleRequests[wkey]=[];
+  S.scheduleRequests[wkey].push({id:'sr'+Date.now(),chatterId:cid,text});
+  document.getElementById('sched-req-text').value='';
+  save();renderScheduleRequests();
+}
+function removeScheduleRequest(id){const wkey=getWeekKey();S.scheduleRequests[wkey]=(S.scheduleRequests[wkey]||[]).filter(x=>x.id!==id);save();renderScheduleRequests();}
+
+function renderGestao(){
+  renderMorningRoutine();
+  renderDailyList('problemsToday','problems-list','problems-badge');
+  renderDailyList('demandas','demandas-list','');
+  renderTrainings();
+  renderWeekEvolutions();
+  renderPrizePanel();
+  renderMotivacional();
+  // Model requests
+  const wkey=getWeekKey();
+  const mrEl=document.getElementById('model-requests-text');
+  if(mrEl&&!mrEl.value)mrEl.value=S.modelRequests[wkey]||'';
+  renderScheduleRequests();
+  // Populate sched-req-chatter
+  const sel=document.getElementById('sched-req-chatter');
+  if(sel&&!sel.options.length)sel.innerHTML=S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+}
+
+/* ===========================================================
+   FICHAS DOS CHATTERS — ficha seduct format with history
+   =========================================================== */
+function renderFichas(){
+  const sel=document.getElementById('ficha-chatter-select');
+  if(!sel)return;
+  if(!S.chatters.length){
+    document.getElementById('ficha-content').innerHTML='<div style="color:var(--text3);font-size:13px">Cadastre chatters na aba Equipe primeiro</div>';
+    return;
+  }
+  sel.innerHTML=S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  renderFichaChatter(sel.value);
+}
+function renderFichaChatter(chatterId){
+  const el=document.getElementById('ficha-content');if(!el)return;
+  const c=S.chatters.find(ch=>ch.id===chatterId);if(!c){el.innerHTML='';return;}
+  if(!S.chatterFichas[chatterId])S.chatterFichas[chatterId]={tech:{},behavior:{},potential:{},risk:{},history:[]};
+  const f=S.chatterFichas[chatterId];
+  const rateField=(key,label,store)=>`<div class="field"><label class="flabel">${label}</label>
+    <select class="fselect" id="ficha-${store}-${key}-${chatterId}" onchange="saveFicha('${chatterId}')">
+      ${['','1 - Fraco','2 - Regular','3 - Bom','4 - Ótimo','5 - Excelente'].map(o=>`<option value="${o}" ${(f[store][key]||'')=== o?'selected':''}>${o||'— selecionar —'}</option>`).join('')}
+    </select></div>`;
+  const boolField=(key,label,store)=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)">
+    <span style="font-size:13.5px">${label}</span>
+    <div style="display:flex;gap:6px">
+      <button onclick="saveFichaBool('${chatterId}','${store}','${key}',true)" style="padding:4px 12px;border-radius:6px;border:1.5px solid ${f[store][key]===true?'var(--ok)':'var(--line)'};background:${f[store][key]===true?'var(--ok-soft)':'transparent'};cursor:pointer;font-size:12px;font-weight:600">Sim</button>
+      <button onclick="saveFichaBool('${chatterId}','${store}','${key}',false)" style="padding:4px 12px;border-radius:6px;border:1.5px solid ${f[store][key]===false?'var(--bad)':'var(--line)'};background:${f[store][key]===false?'var(--bad-soft)':'transparent'};cursor:pointer;font-size:12px;font-weight:600">Não</button>
+    </div></div>`;
+
+  const history=f.history||[];
+
+  el.innerHTML=`
+    <div style="background:var(--bg-soft);border-radius:12px;padding:14px;margin-bottom:12px">
+      <div style="font-weight:800;font-size:16px;margin-bottom:4px">${c.name}</div>
+      <div style="font-size:12px;color:var(--text3)">${c.level} · desde ${c.createdAt?c.createdAt.slice(0,10):'?'}</div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">⚡ TÉCNICA</div></div>
+      ${rateField('conversao','Conversão','tech')}
+      ${rateField('ticket','Ticket médio','tech')}
+      ${rateField('resposta','Tempo de resposta','tech')}
+      ${rateField('evolucao','Evolução','tech')}
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">🧠 COMPORTAMENTO</div></div>
+      ${rateField('intensidade','Intensidade','behavior')}
+      ${rateField('comunicacao','Comunicação','behavior')}
+      ${rateField('comprometimento','Comprometimento','behavior')}
+      ${rateField('energia','Energia','behavior')}
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">🚀 POTENCIAL</div></div>
+      ${boolField('aprende','Aprende rápido?','potential')}
+      ${boolField('lidera','Lidera naturalmente?','potential')}
+      ${boolField('criativo','Tem criatividade?','potential')}
+      ${boolField('ambicao','Tem ambição?','potential')}
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">⚠️ RISCO</div></div>
+      ${boolField('oscila','Oscila emocionalmente?','risk')}
+      ${boolField('reclama','Reclama muito?','risk')}
+      ${boolField('some','Some?','risk')}
+      ${boolField('desconecta','Desconecta?','risk')}
+    </div>
+
+    <button class="btn btn-primary btn-block" style="margin-bottom:12px" onclick="saveFichaSnapshot('${chatterId}')">💾 Salvar snapshot semanal</button>
+
+    ${history.length?`
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">📜 Histórico cronológico</div></div>
+      ${[...history].reverse().map(snap=>`
+        <div style="padding:10px 0;border-bottom:1px solid var(--line)">
+          <div style="font-weight:700;font-size:12.5px;color:var(--text3);margin-bottom:6px">${snap.date}</div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.7">${formatFichaSnapshot(snap)}</div>
+        </div>`).join('')}
+    </div>`:''}
+  `;
+}
+function formatFichaSnapshot(snap){
+  const lines=[];
+  if(snap.tech)Object.entries(snap.tech).forEach(([k,v])=>{if(v)lines.push(`${k}: ${v}`);});
+  if(snap.behavior)Object.entries(snap.behavior).forEach(([k,v])=>{if(v)lines.push(`${k}: ${v}`);});
+  if(snap.potential)Object.entries(snap.potential).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=='')lines.push(`${k}: ${v?'Sim':'Não'}`);});
+  if(snap.risk)Object.entries(snap.risk).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=='')lines.push(`${k}: ${v?'Sim':'Não'}`);});
+  return lines.join(' · ')||'Sem dados';
+}
+function saveFicha(chatterId){
+  if(!S.chatterFichas[chatterId])S.chatterFichas[chatterId]={tech:{},behavior:{},potential:{},risk:{},history:[]};
+  const f=S.chatterFichas[chatterId];
+  ['conversao','ticket','resposta','evolucao'].forEach(k=>{const el=document.getElementById(`ficha-tech-${k}-${chatterId}`);if(el)f.tech[k]=el.value;});
+  ['intensidade','comunicacao','comprometimento','energia'].forEach(k=>{const el=document.getElementById(`ficha-behavior-${k}-${chatterId}`);if(el)f.behavior[k]=el.value;});
+  save();
+}
+function saveFichaBool(chatterId,store,key,value){
+  if(!S.chatterFichas[chatterId])S.chatterFichas[chatterId]={tech:{},behavior:{},potential:{},risk:{},history:[]};
+  S.chatterFichas[chatterId][store][key]=value;
+  save();renderFichaChatter(chatterId);
+}
+function saveFichaSnapshot(chatterId){
+  saveFicha(chatterId);
+  const f=S.chatterFichas[chatterId];
+  const snap={date:todayKey(),tech:{...f.tech},behavior:{...f.behavior},potential:{...f.potential},risk:{...f.risk}};
+  if(!f.history)f.history=[];
+  f.history.push(snap);
+  save();renderFichaChatter(chatterId);toast('✅ Snapshot salvo!');
 }
 
 function renderExtra(){
