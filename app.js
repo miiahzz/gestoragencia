@@ -33,6 +33,7 @@ function migrateState(s){
   if(!s.semanaObjetivos)s.semanaObjetivos={};
   if(!s.modelRequestsSplit)s.modelRequestsSplit={};
   if(!s.demandas2)s.demandas2={};
+  if(!s.justificativas)s.justificativas={};
   if(Array.isArray(s.shifts))s.shifts=s.shifts.map(sh=>({start2:'',end2:'',folgaDia:'',modelIds:[],...sh}));
   if(!s.chatterTrainings)s.chatterTrainings=[];
   if(s.hasSeededStudies===undefined)s.hasSeededStudies=false;
@@ -3110,7 +3111,6 @@ function parseTeamReports(){
   const raw=document.getElementById('teamreport-input').value.trim();
   if(!raw){document.getElementById('teamreport-results').innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0">Cole o conteúdo antes de processar</div>';return;}
 
-  // Split into per-chatter blocks by detecting "Nome:" or "Data:" lines
   const lines=raw.split('\n').map(l=>l.trim()).filter(l=>l);
   const blocks=[];
   let current=null;
@@ -3118,21 +3118,37 @@ function parseTeamReports(){
   lines.forEach(line=>{
     if(/^data:/i.test(line)){
       if(current)blocks.push(current);
-      current={dateRaw:line.replace(/^data:\s*/i,'').trim(),name:'',modelBlocks:[],currentModel:null};
+      current={dateRaw:line.replace(/^data:\s*/i,'').trim(),name:'',modelBlocks:[],currentModel:null,rawSales:[]};
     } else if(/^nome:/i.test(line)&&current){
       current.name=line.replace(/^nome:\s*/i,'').trim();
     } else if(current){
-      // Detect model name line (all caps, no R$)
       const isModelLine=/^[A-ZÁÉÍÓÚÀÂÊÎÔÛÃÕ\s0-9]+$/.test(line)&&line.length>3&&!line.includes('R$')&&!/^\d/.test(line)&&line===line.toUpperCase();
       if(isModelLine){
-        current.currentModel={name:line,sales:[]};
+        current.currentModel={name:line,sales:[],saleTimes:[]};
         current.modelBlocks.push(current.currentModel);
       } else if(/total de comiss/i.test(line)&&current.currentModel){
         const m=line.match(/R\$\s*([\d.,]+)/);
         if(m)current.currentModel.total=parseFloat(m[1].replace('.','').replace(',','.'));
-      } else if(/R\$/.test(line)&&current.currentModel){
-        const m=line.match(/R\$\s*([\d.,]+)/g);
-        if(m)m.forEach(v=>{const val=parseFloat(v.replace('R$','').trim().replace('.','').replace(',','.'));if(val>0)current.currentModel.sales.push(val);});
+      } else if(current.currentModel){
+        // Detect shift window: "23:21 às 07:02"
+        const shiftMatch=line.match(/(\d{2}:\d{2})\s+às\s+(\d{2}:\d{2})/);
+        if(shiftMatch&&!current.currentModel.shiftStart){
+          current.currentModel.shiftStart=shiftMatch[1];
+          current.currentModel.shiftEnd=shiftMatch[2];
+        }
+        // Detect sales: "HH:MM - R$ XX,XX"
+        const saleTimePattern=/(\d{2}:\d{2})\s*-\s*R\$/g;
+        let st;
+        while((st=saleTimePattern.exec(line))!==null){
+          current.currentModel.saleTimes.push(st[1]);
+        }
+        const valMatches=line.match(/R\$\s*([\d.,]+)/g);
+        if(valMatches){
+          valMatches.forEach(v=>{
+            const val=parseFloat(v.replace('R$','').trim().replace(/\./g,'').replace(',','.'));
+            if(val>0){current.currentModel.sales.push(val);current.rawSales.push({val,time:null});}
+          });
+        }
       }
     }
   });
@@ -3145,16 +3161,13 @@ function parseTeamReports(){
 
   const wkey=getWeekKey();
   const goals=S.chatterWeekGoals[wkey]||{};
-  const wd=getWeekDates();
   let exportLines=['📊 RELATÓRIOS DA EQUIPE — '+wkey,''];
   let totalEquipe=0;
 
   const resultsHtml=blocks.map(block=>{
-    // Match chatter by name (fuzzy)
     const chatter=S.chatters.find(c=>c.name.toLowerCase()===block.name.toLowerCase())||
       S.chatters.find(c=>block.name.toLowerCase().includes(c.name.toLowerCase().split(' ')[0]));
 
-    // Parse date robustly
     let dateKey=todayKey();
     if(block.dateRaw){
       const parts=block.dateRaw.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
@@ -3164,125 +3177,146 @@ function parseTeamReports(){
       }
     }
 
-    // Calculate totals per model block
-    let chatterTotal=0;
-    let extraTotal=0;
+    let chatterTotal=0,extraTotal=0;
+    const allSales=[];
     const modelResults=block.modelBlocks.map(mb=>{
       const total=mb.total||mb.sales.reduce((s,v)=>s+v,0);
-      // Detect if this is an overtime block
       const isExtra=/hora extra/i.test(mb.name);
-      if(isExtra) extraTotal+=total;
-      else chatterTotal+=total;
+      if(isExtra)extraTotal+=total; else chatterTotal+=total;
+      mb.sales.forEach((v,i)=>allSales.push({val:v,time:mb.saleTimes[i]||null,isExtra}));
 
-      // Try to match model in S.models (strip "HORA EXTRA" from name for matching)
       const cleanName=mb.name.replace(/hora extra/gi,'').trim();
-      const model=S.models.find(m=>
-        cleanName.toLowerCase().includes(m.name.toLowerCase())||
-        m.name.toLowerCase().includes(cleanName.toLowerCase().split(' ')[0])
-      );
+      const model=S.models.find(m=>cleanName.toLowerCase().includes(m.name.toLowerCase())||m.name.toLowerCase().includes(cleanName.toLowerCase().split(' ')[0]));
 
-      // Auto-save revenues or hora extra slots
       if(chatter&&model){
         if(isExtra){
-          // Save to horaExtraSlots for this week
           const wkeyLocal=getWeekKey();
           if(!S.horaExtraSlots[wkeyLocal])S.horaExtraSlots[wkeyLocal]=[];
-          // Find or create a slot for this chatter+model+date
           const slotId=`parsed_${chatter.id}_${model.id}_${dateKey}`;
           let slot=S.horaExtraSlots[wkeyLocal].find(x=>x.id===slotId);
-          if(!slot){
-            slot={id:slotId,shiftId:'parsed',slotIdx:0,chatterId:chatter.id,
-                  modelId:model.id,revenue:0,done:true,dateKey};
-            S.horaExtraSlots[wkeyLocal].push(slot);
-          }
+          if(!slot){slot={id:slotId,shiftId:'parsed',slotIdx:0,chatterId:chatter.id,modelId:model.id,revenue:0,done:true,dateKey};S.horaExtraSlots[wkeyLocal].push(slot);}
           slot.revenue=total;
-          slot.chatterId=chatter.id;
-          slot.modelId=model.id;
-          slot.done=true;
         } else {
           S.revenues[`${chatter.id}_${model.id}_${dateKey}`]=total;
         }
       }
-
       return{name:mb.name,total,model,matched:!!model,isExtra};
     });
 
+    // ---- Analytics ----
+    const normalSales=allSales.filter(s=>!s.isExtra);
+    const ticketMedio=normalSales.length>0?chatterTotal/normalSales.length:0;
+    const highTicketSales=normalSales.filter(s=>s.val>=ticketMedio*1.5);
+    const highTicketPct=normalSales.length>0?Math.round((highTicketSales.length/normalSales.length)*100):0;
+
+    // Vendas por hora — use shift window from "HH:MM às HH:MM" in the report
+    let shiftHours=0;
+    block.modelBlocks.filter(mb=>!(/hora extra/i.test(mb.name))).forEach(mb=>{
+      if(mb.shiftStart&&mb.shiftEnd){
+        const[h1,m1]=mb.shiftStart.split(':').map(Number);
+        const[h2,m2]=mb.shiftEnd.split(':').map(Number);
+        let endMins=h2*60+m2,startMins=h1*60+m1;
+        if(endMins<startMins)endMins+=24*60;
+        shiftHours+=(endMins-startMins)/60;
+      }
+    });
+    if(!shiftHours)shiftHours=8; // fallback if no shift window found
+    const vendasPorHora=shiftHours>0?Math.round((normalSales.length/shiftHours)*100)/100:0;
+
+    // Tempo máximo sem venda (gap between sale times)
+    let maxGapMin=0;
+    const saleTsAll=[];
+    block.modelBlocks.filter(mb=>!(/hora extra/i.test(mb.name))).forEach(mb=>{
+      (mb.saleTimes||[]).forEach(t=>{const[h,m]=t.split(':').map(Number);saleTsAll.push(h*60+m);});
+    });
+    saleTsAll.sort((a,b)=>a-b);
+    if(saleTsAll.length>1){
+      for(let i=1;i<saleTsAll.length;i++){
+        const gap=saleTsAll[i]-saleTsAll[i-1];
+        if(gap>maxGapMin)maxGapMin=gap;
+      }
+    }
+
+    // Save analytics to chatter ficha + update tech fields
+    if(chatter){
+      if(!S.chatterFichas[chatter.id])S.chatterFichas[chatter.id]={tech:{},behavior:{},potential:{},risk:{},history:[],analytics:{}};
+      if(!S.chatterFichas[chatter.id].analytics)S.chatterFichas[chatter.id].analytics={};
+      const a=S.chatterFichas[chatter.id].analytics;
+      if(!a.weeklyData)a.weeklyData={};
+      a.weeklyData[dateKey]={ticketMedio,vendasPorHora,highTicketPct,maxGapMin,totalVendas:normalSales.length,chatterTotal,extraTotal,shiftHours};
+      // Auto-fill ficha técnica from analytics
+      const f=S.chatterFichas[chatter.id];
+      const scoreLabel=n=>n>=4?'4 - Ótimo':n>=3?'3 - Bom':n>=2?'2 - Regular':'1 - Fraco';
+      const convScore=Math.min(5,Math.max(1,Math.round(vendasPorHora*2))); // scale: 2 vendas/h = 4
+      const ticketScore=ticketMedio>=100?5:ticketMedio>=50?4:ticketMedio>=30?3:ticketMedio>=15?2:1;
+      f.tech.conversao=scoreLabel(convScore);
+      f.tech.ticket=scoreLabel(ticketScore);
+    }
+
     totalEquipe+=chatterTotal;
 
-    // Goal progress (only on normal revenue, not extra)
     const meta=chatter?parseFloat(goals[chatter.id])||0:0;
     const weekRev=chatter?getChatterWeekRevenue(chatter.id):0;
     const pct=meta>0?Math.round((weekRev/meta)*100):null;
     const falta=meta>0?Math.max(0,meta-weekRev):0;
 
-    // Build export lines
     exportLines.push(`👤 ${block.name}${block.dateRaw?' ('+block.dateRaw+')':''}`);
     modelResults.filter(mr=>!mr.isExtra).forEach(mr=>exportLines.push(`  ${mr.name}: ${money(mr.total)}`));
-    if(chatterTotal>0)exportLines.push(`  Total faturamento: ${money(chatterTotal)}`);
-    if(extraTotal>0){
-      exportLines.push(`  ⚡ Hora extra:`);
-      modelResults.filter(mr=>mr.isExtra).forEach(mr=>exportLines.push(`    ${mr.name}: ${money(mr.total)}`));
-      exportLines.push(`  Total hora extra: ${money(extraTotal)}`);
-    }
-    if(meta>0){
-      exportLines.push(`  Meta semana: ${money(meta)} | Atingido: ${money(weekRev)} (${pct}%)`);
-      if(falta>0)exportLines.push(`  Falta para meta: ${money(falta)}`);
-    }
+    if(chatterTotal>0)exportLines.push(`  Total: ${money(chatterTotal)} | Ticket médio: ${money(ticketMedio)} | High ticket: ${highTicketPct}% | Vendas/hora: ${vendasPorHora}`);
+    if(extraTotal>0)exportLines.push(`  ⚡ Hora extra: ${money(extraTotal)}`);
+    if(meta>0)exportLines.push(`  Meta: ${money(meta)} | Atingido: ${money(weekRev)} (${pct}%)${falta>0?` | Falta: ${money(falta)}`:' ✅'}`);
     exportLines.push('');
 
     const matchColor=chatter?'var(--ok)':'var(--warn)';
     return`<div style="background:var(--bg-soft);border-radius:10px;padding:13px;margin-bottom:10px;border-left:3px solid ${matchColor}">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <div>
-          <div style="font-weight:700;font-size:14px">${block.name}</div>
-          <div style="font-size:11.5px;color:var(--text3)">${block.dateRaw||dateKey}${chatter?'':' <span style="color:var(--warn)">⚠️ não encontrado na equipe</span>'}</div>
+          <div style="font-weight:700;font-size:14px">${block.name}${chatter?'':' <span style="color:var(--warn);font-size:11px">⚠️ não encontrado</span>'}</div>
+          <div style="font-size:11.5px;color:var(--text3)">${block.dateRaw||dateKey}</div>
         </div>
         <div style="text-align:right">
           ${chatterTotal>0?`<div style="font-family:var(--font-mono);font-weight:800;font-size:15px;color:var(--ok)">${money(chatterTotal)}</div>`:''}
-          ${extraTotal>0?`<div style="font-family:var(--font-mono);font-weight:700;font-size:12px;color:var(--info)">⚡ ${money(extraTotal)}</div>`:''}
+          ${extraTotal>0?`<div style="font-size:12px;color:var(--info)">⚡ ${money(extraTotal)}</div>`:''}
         </div>
       </div>
       ${modelResults.filter(mr=>!mr.isExtra).map(mr=>`
-        <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12.5px;border-bottom:1px solid var(--line)">
-          <span>${mr.name}${!mr.matched?' <span style="font-size:10px;color:var(--warn)">(não vinculado)</span>':''}</span>
-          <span style="font-family:var(--font-mono);font-weight:600">${money(mr.total)}</span>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12.5px;border-bottom:1px solid var(--line)">
+          <span>${mr.name}</span><span style="font-family:var(--font-mono)">${money(mr.total)}</span>
         </div>`).join('')}
-      ${extraTotal>0?`
-        <div style="margin-top:8px;background:var(--info-soft);border-radius:7px;padding:8px 10px">
-          <div style="font-size:11px;font-weight:700;color:var(--info);margin-bottom:5px">⚡ Hora Extra → salvo na aba H.Extra</div>
-          ${modelResults.filter(mr=>mr.isExtra).map(mr=>`
-            <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0">
-              <span>${mr.name}</span>
-              <span style="font-family:var(--font-mono);font-weight:600">${money(mr.total)}</span>
-            </div>`).join('')}
-        </div>`:''}
-      ${meta>0?`
-        <div style="margin-top:9px;background:var(--bg);border-radius:7px;padding:8px 10px">
-          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
-            <span style="color:var(--text2)">Meta da semana</span>
-            <span style="font-family:var(--font-mono);font-weight:700">${money(meta)}</span>
-          </div>
-          <div style="background:var(--line);border-radius:4px;height:6px;overflow:hidden">
-            <div style="height:6px;border-radius:4px;background:${pct>=100?'var(--ok)':pct>=60?'var(--warn)':'var(--bad)'};width:${Math.min(100,pct)}%"></div>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:11px;margin-top:4px;color:var(--text3)">
-            <span>${pct}% atingido esta semana</span>
-            ${falta>0?`<span style="color:var(--bad)">falta ${money(falta)}</span>`:`<span style="color:var(--ok)">✅ meta batida!</span>`}
-          </div>
-        </div>`:''}
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:10px">
+        <div style="background:var(--bg);border-radius:7px;padding:7px;text-align:center">
+          <div style="font-size:10px;color:var(--text3)">Ticket médio</div>
+          <div style="font-size:13px;font-weight:700;font-family:var(--font-mono)">${money(ticketMedio)}</div>
+        </div>
+        <div style="background:var(--bg);border-radius:7px;padding:7px;text-align:center">
+          <div style="font-size:10px;color:var(--text3)">High ticket</div>
+          <div style="font-size:13px;font-weight:700;color:${highTicketPct>=30?'var(--ok)':'var(--warn)'}">${highTicketPct}%</div>
+        </div>
+        <div style="background:var(--bg);border-radius:7px;padding:7px;text-align:center">
+          <div style="font-size:10px;color:var(--text3)">Vendas/hora</div>
+          <div style="font-size:13px;font-weight:700;color:${vendasPorHora>=1?'var(--ok)':vendasPorHora>=0.5?'var(--warn)':'var(--bad)'}">${vendasPorHora}</div>
+        </div>
+        <div style="background:var(--bg);border-radius:7px;padding:7px;text-align:center">
+          <div style="font-size:10px;color:var(--text3)">Maior gap</div>
+          <div style="font-size:13px;font-weight:700;color:${maxGapMin>60?'var(--bad)':maxGapMin>30?'var(--warn)':'var(--ok)'}">${maxGapMin?maxGapMin+'min':'—'}</div>
+        </div>
+      </div>
+      ${meta>0?`<div style="margin-top:10px">
+        <div style="background:var(--line);border-radius:4px;height:6px;overflow:hidden;margin-bottom:4px">
+          <div style="height:6px;border-radius:4px;background:${pct>=100?'var(--ok)':pct>=60?'var(--warn)':'var(--bad)'};width:${Math.min(100,pct||0)}%"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3)">
+          <span>${pct}% da meta</span>${falta>0?`<span style="color:var(--bad)">falta ${money(falta)}</span>`:`<span style="color:var(--ok)">✅ batida!</span>`}
+        </div>
+      </div>`:''}
     </div>`;
   }).join('');
 
-  // Save revenues to Firebase
   save();
 
-  // Footer
   exportLines.push(`TOTAL EQUIPE: ${money(totalEquipe)}`);
-
   document.getElementById('teamreport-results').innerHTML=
-    `<div style="font-size:11.5px;color:var(--text3);margin-bottom:10px">✅ ${blocks.length} relatório(s) processado(s) · Faturamentos salvos automaticamente</div>`+
-    resultsHtml;
-
+    `<div style="font-size:11.5px;color:var(--ok);margin-bottom:10px">✅ ${blocks.length} relatório(s) processado(s) · Dados salvos automaticamente</div>`+resultsHtml;
   const summaryEl=document.getElementById('teamreport-summary');
   const exportEl=document.getElementById('teamreport-export');
   if(summaryEl)summaryEl.style.display='block';
@@ -4202,7 +4236,7 @@ function updateFichaFromAnalysis(chatterId){
   const f=S.chatterFichas[chatterId];
   // Collect all analyses for this chatter
   const allAnalyses=[];
-  Object.values(S.chatAnalyses).forEach(dayArr=>{
+  Object.values(S.chatAnalyses||{}).forEach(dayArr=>{
     (dayArr||[]).filter(a=>a.chatterId===chatterId).forEach(a=>allAnalyses.push(a));
   });
   if(!allAnalyses.length)return;
@@ -4347,41 +4381,92 @@ function renderChatterAnalysis(){
   if(sel&&!sel.options.length)sel.innerHTML='<option value="">— selecionar —</option>'+S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
   const chatterId=sel?.value;
   if(!chatterId){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Selecione um chatter para ver análise</div>';return;}
+
+  const f=S.chatterFichas[chatterId];
+  const analytics=f?.analytics?.weeklyData||{};
   const wd=getWeekDates();
-  let totalRev=0,totalSales=0,firstSale=null,lastSale=null,longestGap=0,lastTime=null;
-  // Parse from team reports data (revenues by day)
+
+  // Aggregate analytics from parsed reports this week
+  let totalRev=0,totalSales=0,totalTicket=0,totalHighPct=0,totalGap=0,extraTot=0,totalVPH=0,daysCount=0;
   wd.forEach(d=>{
-    const dateKey=fmt(d);
-    S.models.forEach(m=>{
-      const val=parseFloat(S.revenues[`${chatterId}_${m.id}_${dateKey}`])||0;
-      if(val>0){totalRev+=val;totalSales++;if(!firstSale)firstSale=dateKey;lastSale=dateKey;}
-    });
+    const dk=fmt(d);
+    if(analytics[dk]){
+      const a=analytics[dk];
+      totalRev+=a.chatterTotal||0;
+      totalSales+=a.totalVendas||0;
+      if(a.ticketMedio>0){totalTicket+=a.ticketMedio;totalVPH+=a.vendasPorHora||0;totalHighPct+=a.highTicketPct||0;daysCount++;}
+      if(a.maxGapMin>totalGap)totalGap=a.maxGapMin;
+      extraTot+=a.extraTotal||0;
+    }
   });
-  // Get analyses for this chatter
-  const analyses=[];
-  Object.values(S.chatAnalyses).forEach(arr=>(arr||[]).filter(a=>a.chatterId===chatterId).forEach(a=>analyses.push(a)));
-  const avgMetric=key=>analyses.length?Math.round(analyses.reduce((s,a)=>s+(a[key]||0),0)/analyses.length*10)/10:null;
-  const ticketMedio=totalSales>0?totalRev/totalSales:0;
-  const daysWorked=wd.filter(d=>S.models.some(m=>(parseFloat(S.revenues[`${chatterId}_${m.id}_${fmt(d)}`])||0)>0)).length;
-  const revPerHour=daysWorked>0?totalRev/(daysWorked*8):0; // assume 8h shifts
+
+  const ticketMedioSemana=daysCount>0?totalTicket/daysCount:0;
+  const highPctSemana=daysCount>0?Math.round(totalHighPct/daysCount):0;
+  const vphSemana=daysCount>0?Math.round((totalVPH/daysCount)*100)/100:0;
+
+  // Fall back to revenue data if no analytics yet
+  if(!daysCount){
+    let revTotal=0;let revDays=0;
+    wd.forEach(d=>{let dr=0;S.models.forEach(m=>{dr+=parseFloat(S.revenues[`${chatterId}_${m.id}_${fmt(d)}`])||0;});if(dr>0){revTotal+=dr;revDays++;}});
+    totalRev=revTotal;
+    const ticketFallback=totalSales>0?revTotal/totalSales:0;
+    el.innerHTML=`
+      <div class="reprow"><div class="replb">Faturamento semana</div><div class="repval">${money(totalRev)}</div></div>
+      <div class="reprow"><div class="replb">Dias com vendas</div><div class="repval">${revDays} dias</div></div>
+      <div style="margin-top:8px;font-size:12px;color:var(--text3)">Cole relatórios na aba Rel.Equipe para ver ticket médio, high ticket e tempo sem venda.</div>`;
+    return;
+  }
+
   el.innerHTML=`
     <div class="reprow"><div class="replb">Faturamento semana</div><div class="repval">${money(totalRev)}</div></div>
-    <div class="reprow"><div class="replb">Ticket médio</div><div class="repval">${money(ticketMedio)}</div></div>
-    <div class="reprow"><div class="replb">Fat. estimado/hora</div><div class="repval">${money(revPerHour)}/h</div></div>
-    <div class="reprow"><div class="replb">Dias com vendas</div><div class="repval">${daysWorked} dias</div></div>
-    ${analyses.length?`
-    <div style="margin-top:10px;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Média das análises (${analyses.length})</div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
-      ${CHAT_METRICS.map(m=>{const v=avgMetric(m);return v!==null?`<div style="text-align:center;background:var(--bg-soft);border-radius:7px;padding:6px 4px">
-        <div style="font-size:10px;color:var(--text3)">${CHAT_METRIC_LABELS[m]}</div>
-        <div style="font-size:18px;font-weight:800;color:${v>=4?'var(--ok)':v>=3?'var(--warn)':'var(--bad)'}">${v}</div>
-      </div>`:'';}).join('')}
-    </div>`:''}`;
+    <div class="reprow"><div class="replb">Ticket médio (semana)</div><div class="repval">${money(ticketMedioSemana)}</div></div>
+    <div class="reprow"><div class="replb">% High ticket</div><div class="repval" style="color:${highPctSemana>=30?'var(--ok)':'var(--warn)'}">${highPctSemana}%</div></div>
+    <div class="reprow"><div class="replb">Vendas/hora (média)</div><div class="repval" style="color:${vphSemana>=1?'var(--ok)':vphSemana>=0.5?'var(--warn)':'var(--bad)'}">${vphSemana}</div></div>
+    <div class="reprow"><div class="replb">Maior tempo sem venda</div><div class="repval" style="color:${totalGap>60?'var(--bad)':totalGap>30?'var(--warn)':'var(--ok)'}">${totalGap?totalGap+'min':'—'}</div></div>
+    ${extraTot>0?`<div class="reprow"><div class="replb">Hora extra (semana)</div><div class="repval" style="color:var(--info)">⚡ ${money(extraTot)}</div></div>`:''}
+    <div class="reprow"><div class="replb">Dias analisados</div><div class="repval">${daysCount}</div></div>
+    ${daysCount>0?`
+    <div style="margin-top:10px;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Por dia</div>
+    ${wd.filter(d=>analytics[fmt(d)]).map(d=>{const a=analytics[fmt(d)];return`
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px">
+        <span style="color:var(--text2)">${fmt(d)}</span>
+        <span>${money(a.chatterTotal)} · ${a.totalVendas} vendas · ${a.vendasPorHora||0}/h</span>
+      </div>`}).join('')}`:''}`;
 }
 
 /* ===========================================================
    GESTÃO — updated renderGestao
    =========================================================== */
+function renderGestaoMissingReports(){
+  const el=document.getElementById('gestao-missing-reports');
+  if(!el)return;
+  const wd=getWeekDates();
+  const missing=[];
+  wd.forEach(d=>{
+    const dk=fmt(d);
+    if(dk>todayKey())return; // future days skip
+    S.chatters.filter(c=>c.time!=='elite').forEach(c=>{
+      const hasRev=S.models.some(m=>(parseFloat(S.revenues[`${c.id}_${m.id}_${dk}`])||0)>0);
+      if(!hasRev)missing.push({name:c.name,id:c.id,date:dk});
+    });
+  });
+  if(!missing.length){el.innerHTML='<div style="color:var(--ok);font-size:13px">✅ Todos os relatórios recebidos esta semana</div>';return;}
+  // Group by chatter
+  const byChatter={};
+  missing.forEach(x=>{if(!byChatter[x.id])byChatter[x.id]={name:x.name,dates:[]};byChatter[x.id].dates.push(x.date);});
+  el.innerHTML=Object.values(byChatter).map(x=>`
+    <div style="padding:8px 0;border-bottom:1px solid var(--line)">
+      <div style="font-weight:600;font-size:13px;margin-bottom:4px">${x.name}</div>
+      <div style="font-size:11.5px;color:var(--bad)">Sem relatório: ${x.dates.join(', ')}</div>
+      <textarea class="ftext" placeholder="Justificativa (falta, folga, etc.)..." style="min-height:40px;font-size:12px;margin-top:6px" onblur="saveJustificativa('${x.id}',this.value)"></textarea>
+    </div>`).join('');
+}
+function saveJustificativa(chatterId,text){
+  if(!S.justificativas)S.justificativas={};
+  S.justificativas[todayKey()+'_'+chatterId]=text;
+  save();
+}
+
 function renderGestao(){
   renderManagerProfile();
   renderMorningRoutine();
@@ -4401,7 +4486,7 @@ function renderGestao(){
   if(sel&&!sel.options.length)sel.innerHTML=S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
   renderChatAnalysisList();
   renderOrientList();
-  renderMidnightList();
+  renderGestaoMissingReports();
 }
 
 /* ===========================================================
@@ -4413,27 +4498,27 @@ function renderEvolucao(){
   const wkey=getWeekKey();
   let html='';
 
-  // Manager section
+  // Manager card — profile only, no estudos
   const p=S.managerProfile||{};
-  const d=S.estudosDraft||{};
-  html+=`<div class="panel" style="border-left:3px solid var(--info)">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+  html+=`<div class="panel" style="border-left:3px solid var(--info);margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:12px">
       <div style="width:44px;height:44px;border-radius:50%;overflow:hidden;background:var(--bg-soft);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px">
         ${p.photoUrl?`<img src="${p.photoUrl}" style="width:100%;height:100%;object-fit:cover">`:'👤'}
       </div>
-      <div><div style="font-weight:800;font-size:15px">${p.name||'Gestor'}</div>
-      <div style="font-size:12px;color:var(--info)">${p.cargo||'Gestor de Chatters'}</div></div>
+      <div>
+        <div style="font-weight:800;font-size:15px">${p.name||'Gestor'}</div>
+        <div style="font-size:12px;color:var(--info)">${p.cargo||'Gestor de Chatters'}</div>
+      </div>
     </div>
-    ${d.foco1||d.foco2||d.foco3?`<div style="margin-bottom:8px"><div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px">🎯 FOCO DESTA SEMANA</div>
-      ${[d.foco1,d.foco2,d.foco3].filter(Boolean).map(f=>`<div style="font-size:13px;padding:3px 0">• ${f}</div>`).join('')}
-    </div>`:''}
-    ${d.fracos1||d.fracos2||d.fracos3?`<div><div style="font-size:11px;font-weight:700;color:var(--warn);margin-bottom:4px">⚠️ DESENVOLVENDO</div>
-      ${[d.fracos1,d.fracos2,d.fracos3].filter(Boolean).map(f=>`<div style="font-size:13px;padding:3px 0">• ${f}</div>`).join('')}
-    </div>`:''}
   </div>`;
 
   // Team section
-  html+=`<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin:16px 0 8px">Equipe</div>`;
+  html+=`<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Equipe — evolução semanal</div>`;
+
+  if(!S.chatters.length){
+    html+='<div style="color:var(--text3);font-size:13px;padding:12px 0">Cadastre chatters na aba Equipe</div>';
+    el.innerHTML=html;return;
+  }
 
   S.chatters.forEach(c=>{
     const rev=getChatterWeekRevenueTotal(c.id);
@@ -4441,28 +4526,36 @@ function renderEvolucao(){
     const meta=parseFloat(goals[c.id])||0;
     const pct=meta>0?Math.round((getChatterWeekRevenue(c.id)/meta)*100):null;
     const f=S.chatterFichas[c.id]||{};
+    const analytics=f?.analytics?.weeklyData||{};
+    const wd=getWeekDates();
+    let ticketSum=0,ticketDays=0,highPctSum=0;
+    wd.forEach(d=>{const a=analytics[fmt(d)];if(a&&a.ticketMedio>0){ticketSum+=a.ticketMedio;highPctSum+=a.highTicketPct||0;ticketDays++;}});
+    const ticketMedio=ticketDays>0?ticketSum/ticketDays:0;
+    const highPct=ticketDays>0?Math.round(highPctSum/ticketDays):0;
     const analyses=[];
-    Object.values(S.chatAnalyses).forEach(arr=>(arr||[]).filter(a=>a.chatterId===c.id).forEach(a=>analyses.push(a)));
+    Object.values(S.chatAnalyses||{}).forEach(arr=>(arr||[]).filter(a=>a.chatterId===c.id).forEach(a=>analyses.push(a)));
     const avgScore=analyses.length?Math.round(CHAT_METRICS.reduce((s,m)=>s+analyses.reduce((ss,a)=>ss+(a[m]||0),0)/analyses.length,0)/CHAT_METRICS.length*10)/10:null;
     const timeLabel=c.time==='elite'?'<span class="pill pill-warn" style="font-size:9px">⭐ Elite</span>':'<span class="pill pill-flat" style="font-size:9px">Básico</span>';
+
     html+=`<div class="panel" style="margin-bottom:8px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <div style="display:flex;align-items:center;gap:8px">
+        <div style="display:flex;align-items:center;gap:6px">
           <div style="font-weight:700;font-size:14px">${c.name}</div>${timeLabel}
           <span class="pill pill-flat" style="font-size:9px">${c.level}</span>
         </div>
         <div style="font-family:var(--font-mono);font-weight:800;font-size:14px;color:var(--ok)">${moneyShort(rev)}</div>
       </div>
-      ${pct!==null?`<div style="background:var(--line);border-radius:4px;height:6px;overflow:hidden;margin-bottom:4px">
-        <div style="height:6px;border-radius:4px;background:${pct>=100?'var(--ok)':pct>=60?'var(--warn)':'var(--bad)'};width:${Math.min(100,pct)}%"></div>
+      ${meta>0?`<div style="background:var(--line);border-radius:4px;height:6px;overflow:hidden;margin-bottom:4px">
+        <div style="height:6px;border-radius:4px;background:${pct>=100?'var(--ok)':pct>=60?'var(--warn)':'var(--bad)'};width:${Math.min(100,pct||0)}%"></div>
       </div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:8px">${pct}% da meta${pct<60?' · precisa de atenção':pct>=100?' · ✅ meta batida!':''}</div>`:''}
-      ${avgScore!==null?`<div style="font-size:12px;color:var(--text2)">Média análises: <strong style="color:${avgScore>=4?'var(--ok)':avgScore>=3?'var(--warn)':'var(--bad)'}">${avgScore}/5</strong></div>`:''}
-      ${f.tech&&Object.values(f.tech).some(Boolean)?`<div style="font-size:12px;color:var(--text2);margin-top:4px">Técnica: ${Object.entries(f.tech).filter(([,v])=>v).map(([k,v])=>`${k}: ${v.split(' ')[0]}`).join(' · ')}</div>`:''}
+      <div style="font-size:11px;color:var(--text3);margin-bottom:6px">${pct}% da meta${pct<60?' · 🔴 atenção':pct>=100?' · ✅':''}</div>`:''}
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        ${ticketMedio>0?`<span style="font-size:12px;color:var(--text2)">Ticket médio: <strong>${money(ticketMedio)}</strong></span>`:''}
+        ${highPct>0?`<span style="font-size:12px;color:var(--text2)">High ticket: <strong style="color:${highPct>=30?'var(--ok)':'var(--warn)'}">${highPct}%</strong></span>`:''}
+        ${avgScore!==null?`<span style="font-size:12px;color:var(--text2)">Análise: <strong style="color:${avgScore>=4?'var(--ok)':avgScore>=3?'var(--warn)':'var(--bad)'}">${avgScore}/5</strong></span>`:''}
+      </div>
     </div>`;
   });
-
-  if(!S.chatters.length)html+='<div style="color:var(--text3);font-size:13px;padding:12px 0">Cadastre chatters na aba Equipe</div>';
 
   el.innerHTML=html;
 }

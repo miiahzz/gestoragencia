@@ -828,13 +828,12 @@ body{
     <div id="orient-list"></div>
   </div>
 
-  <!-- RELATÓRIOS 00H -->
+  <!-- AVISO RELATÓRIOS FALTANTES -->
   <div class="panel">
     <div class="panel-head">
-      <div><div class="panel-title">Relatórios das 00h</div></div>
-      <span class="pill pill-warn" id="midnight-badge">0 pendentes</span>
+      <div><div class="panel-title">📋 Relatórios da semana</div><div class="panel-note">Quem não enviou</div></div>
     </div>
-    <div id="midnight-list"></div>
+    <div id="gestao-missing-reports"></div>
   </div>
 </section>
 
@@ -859,15 +858,15 @@ body{
       <div><div class="panel-title">💪 Pontos fortes e fracos</div></div>
       <button class="btn btn-soft btn-xs" onclick="saveEstudosSnapshot()">💾 salvar</button>
     </div>
-    <div class="field"><label class="flabel">✅ Ponto forte 1</label><textarea class="ftext" id="estudos-fortes1" placeholder="..." style="min-height:50px" onblur="saveEstudosDraft()"></textarea></div>
-    <div class="field"><label class="flabel">✅ Ponto forte 2</label><textarea class="ftext" id="estudos-fortes2" placeholder="..." style="min-height:50px" onblur="saveEstudosDraft()"></textarea></div>
-    <div class="field"><label class="flabel">✅ Ponto forte 3</label><textarea class="ftext" id="estudos-fortes3" placeholder="..." style="min-height:50px" onblur="saveEstudosDraft()"></textarea></div>
-    <div class="field"><label class="flabel">⚠️ A melhorar 1</label><textarea class="ftext" id="estudos-fracos1" placeholder="..." style="min-height:50px" onblur="saveEstudosDraft()"></textarea></div>
-    <div class="field"><label class="flabel">⚠️ A melhorar 2</label><textarea class="ftext" id="estudos-fracos2" placeholder="..." style="min-height:50px" onblur="saveEstudosDraft()"></textarea></div>
-    <div class="field"><label class="flabel">⚠️ A melhorar 3</label><textarea class="ftext" id="estudos-fracos3" placeholder="..." style="min-height:50px" onblur="saveEstudosDraft()"></textarea></div>
-    <div class="field"><label class="flabel">🎯 Foco 1</label><input class="finput" id="estudos-foco1" placeholder="..." onblur="saveEstudosDraft()"></div>
-    <div class="field"><label class="flabel">🎯 Foco 2</label><input class="finput" id="estudos-foco2" placeholder="..." onblur="saveEstudosDraft()"></div>
-    <div class="field"><label class="flabel">🎯 Foco 3</label><input class="finput" id="estudos-foco3" placeholder="..." onblur="saveEstudosDraft()"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:12px;color:var(--text2);min-width:90px;flex-shrink:0">✅ Forte 1</label><input class="finput" id="estudos-fortes1" placeholder="..." onblur="saveEstudosDraft()" style="flex:1"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:12px;color:var(--text2);min-width:90px;flex-shrink:0">✅ Forte 2</label><input class="finput" id="estudos-fortes2" placeholder="..." onblur="saveEstudosDraft()" style="flex:1"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:12px;color:var(--text2);min-width:90px;flex-shrink:0">✅ Forte 3</label><input class="finput" id="estudos-fortes3" placeholder="..." onblur="saveEstudosDraft()" style="flex:1"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:12px;color:var(--text2);min-width:90px;flex-shrink:0">⚠️ Melhorar 1</label><input class="finput" id="estudos-fracos1" placeholder="..." onblur="saveEstudosDraft()" style="flex:1"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:12px;color:var(--text2);min-width:90px;flex-shrink:0">⚠️ Melhorar 2</label><input class="finput" id="estudos-fracos2" placeholder="..." onblur="saveEstudosDraft()" style="flex:1"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:12px;color:var(--text2);min-width:90px;flex-shrink:0">⚠️ Melhorar 3</label><input class="finput" id="estudos-fracos3" placeholder="..." onblur="saveEstudosDraft()" style="flex:1"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:12px;color:var(--text2);min-width:90px;flex-shrink:0">🎯 Foco 1</label><input class="finput" id="estudos-foco1" placeholder="..." onblur="saveEstudosDraft()" style="flex:1"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:12px;color:var(--text2);min-width:90px;flex-shrink:0">🎯 Foco 2</label><input class="finput" id="estudos-foco2" placeholder="..." onblur="saveEstudosDraft()" style="flex:1"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:12px;color:var(--text2);min-width:90px;flex-shrink:0">🎯 Foco 3</label><input class="finput" id="estudos-foco3" placeholder="..." onblur="saveEstudosDraft()" style="flex:1"></div>
     <button class="btn btn-primary btn-block" style="margin-top:10px" onclick="saveEstudosSnapshot()">💾 Salvar snapshot desta semana</button>
   </div>
 
@@ -937,7 +936,12 @@ body{
     <select class="fselect" id="ca-chatter"></select>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-    ${['Conexão','Condução','Engajamento','Conversão','Resposta','Naturalidade'].map(m=>`<div><label class="flabel">${m}</label><select class="fselect" id="ca-${m.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')}"><option value="">—</option>${[1,2,3,4,5].map(n=>`<option value="${n}">${n}</option>`).join('')}</select></div>`).join('')}
+    <div><label class="flabel">Conexão</label><select class="fselect" id="ca-conexao"><option value="">—</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
+    <div><label class="flabel">Condução</label><select class="fselect" id="ca-conducao"><option value="">—</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
+    <div><label class="flabel">Engajamento</label><select class="fselect" id="ca-engajamento"><option value="">—</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
+    <div><label class="flabel">Conversão</label><select class="fselect" id="ca-conversao"><option value="">—</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
+    <div><label class="flabel">Resposta</label><select class="fselect" id="ca-resposta"><option value="">—</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
+    <div><label class="flabel">Naturalidade</label><select class="fselect" id="ca-naturalidade"><option value="">—</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
   </div>
   <div class="field"><label class="flabel">Pontos fortes</label><textarea class="ftext" id="ca-fortes" placeholder="O que foi bem..." style="min-height:60px"></textarea></div>
   <div class="field"><label class="flabel">Pontos fracos</label><textarea class="ftext" id="ca-fracos" placeholder="O que melhorar..." style="min-height:60px"></textarea></div>
