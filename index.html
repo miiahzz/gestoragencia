@@ -8,8 +8,6 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#FFFFFF">
 <title>GestorPro</title>
-<script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
 <style>
 /* ============================================================
    GestorPro — clean design tokens
@@ -380,6 +378,7 @@ body{
     <button class="toptab" data-go="teamreports">Rel. Equipe</button>
     <button class="toptab" data-go="semana">Semana</button>
     <button class="toptab" data-go="estudos">Estudos</button>
+    <button class="toptab" data-go="evolucao">Evolução</button>
   </nav>
 </header>
 
@@ -414,19 +413,24 @@ body{
   <!-- WATCH -->
   <div id="home-watch-wrap"></div>
 
-  <!-- RELATÓRIOS 00H -->
-  <div class="panel" id="home-midnight-panel" style="display:none">
-    <div class="panel-head">
-      <div class="panel-title">Relatórios das 00h</div>
-      <button class="btn btn-soft btn-xs" data-go="agenda">ver estudos</button>
-    </div>
-    <div id="home-midnight-preview"></div>
+  <!-- JANELA DE TURNOS -->
+  <div class="panel" id="home-janela-panel" style="display:none">
+    <div class="panel-head"><div><div class="panel-title">⚠️ Janela sem cobertura</div><div class="panel-note">Turnos sem chatter escalado</div></div></div>
+    <div id="home-janela-list"></div>
   </div>
 
-  <!-- FOLGAS AMANHÃ -->
-  <div class="panel" id="home-folga-panel" style="display:none;border-color:rgba(180,35,52,.25)">
-    <div id="home-folga-content"></div>
+  <!-- MOTIVACIONAL -->
+  <div class="panel" id="home-motiv-panel">
+    <div class="panel-head"><div class="panel-title">💡 Motivacional da semana</div><button class="btn btn-ghost btn-xs" onclick="openMotivacionalHome()">editar</button></div>
+    <div id="home-motiv-content"></div>
   </div>
+
+  <!-- DEMANDAS URGENTES -->
+  <div id="home-demandas-urgentes"></div>
+
+
+
+
 
   <!-- BACKUP -->
   <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg-soft);border-radius:10px;margin-bottom:8px">
@@ -547,7 +551,28 @@ body{
     <div id="revenue-table"></div>
   </div>
 
+    <!-- METAS DOS CHATTERS -->
   <div class="panel">
+    <div class="panel-head"><div class="panel-title">🎯 Metas da semana</div></div>
+    <div id="fat-meta-progress"></div>
+  </div>
+
+  <!-- HORA EXTRA -->
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">⚡ Hora extra acumulada</div></div>
+    <div id="fat-extra-progress"></div>
+  </div>
+
+  <!-- ANÁLISE DO CHATTER -->
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">📊 Análise do chatter</div></div>
+    <select class="fselect" id="fat-analysis-chatter" style="margin-bottom:10px" onchange="renderChatterAnalysis()">
+      <option value="">— selecionar chatter —</option>
+    </select>
+    <div id="fat-chatter-analysis"></div>
+  </div>
+
+<div class="panel">
     <div class="panel-head"><div><div class="panel-title">📅 Diário por Modelo</div><div class="panel-note">Faturamento dia a dia, semana atual</div></div></div>
     <div id="daily-by-model"></div>
   </div>
@@ -704,9 +729,15 @@ body{
   <div class="eyebrow">operação</div>
   <div class="view-title">Gestão</div>
 
+  <!-- PERFIL DO GESTOR -->
+  <div class="panel" id="manager-profile-panel">
+    <div id="manager-profile-display"></div>
+    <button class="btn btn-ghost btn-xs btn-block" style="margin-top:8px" onclick="openModal('m-manager-profile')">✏️ editar perfil</button>
+  </div>
+
   <!-- ROTINA DA MANHÃ -->
   <div class="panel">
-    <div class="panel-head"><div class="panel-title">☀️ Rotina da manhã</div><span class="pill pill-flat" style="font-size:10px">diária</span></div>
+    <div class="panel-head"><div class="panel-title">☀️ Rotina da manhã</div><span class="pill pill-flat" style="font-size:10px">repete todo dia</span></div>
     <div id="morning-routine-list"></div>
     <div style="display:flex;gap:8px;margin-top:10px">
       <input class="finput" id="morning-routine-input" placeholder="Nova tarefa da rotina..." style="flex:1">
@@ -726,11 +757,14 @@ body{
 
   <!-- DEMANDAS DO KAIQUE -->
   <div class="panel">
-    <div class="panel-head"><div class="panel-title">📌 Demandas do Kaique para hoje</div></div>
-    <div id="demandas-list"></div>
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <input class="finput" id="demandas-input" placeholder="Nova demanda..." style="flex:1">
-      <button class="btn btn-primary btn-sm" onclick="addDemanda()">+</button>
+    <div class="panel-head"><div class="panel-title">📌 Demandas do Kaique</div></div>
+    <div id="demandas2-list"></div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+      <input class="finput" id="demandas2-text" placeholder="Nova demanda...">
+      <div style="display:flex;gap:8px">
+        <input type="date" class="finput" id="demandas2-date" style="flex:1">
+        <button class="btn btn-primary btn-sm" onclick="addDemanda2()">+</button>
+      </div>
     </div>
   </div>
 
@@ -738,12 +772,6 @@ body{
   <div class="panel" style="border:2px solid var(--warn)">
     <div class="panel-head"><div><div class="panel-title" style="color:var(--warn)">🎓 TREINAMENTO</div></div><button class="btn btn-soft btn-xs" onclick="openModal('m-add-training')">+ novo</button></div>
     <div id="training-list"></div>
-  </div>
-
-  <!-- EVOLUÇÕES SEMANAIS -->
-  <div class="panel">
-    <div class="panel-head"><div class="panel-title">📈 Evoluções semanais</div><button class="btn btn-ghost btn-xs" onclick="addWeekEvolution()">+ item</button></div>
-    <div id="week-evolution-list"></div>
   </div>
 
   <!-- PREMIAÇÃO SEMANAL -->
@@ -754,14 +782,19 @@ body{
 
   <!-- MOTIVACIONAL -->
   <div class="panel" style="border:1.5px solid var(--info)">
-    <div class="panel-head"><div class="panel-title" style="color:var(--info)">💪 Motivacional</div></div>
-    <div id="motivational-panel"></div>
+    <div class="panel-head"><div class="panel-title" style="color:var(--info)">💡 Motivacional da semana</div></div>
+    <div class="field"><label class="flabel">Ideia para a equipe</label>
+      <textarea class="ftext" id="motiv-idea-gestao" placeholder="Uma ideia motivacional para a semana..." style="min-height:60px" onblur="saveMotivacionalGestao()"></textarea>
+    </div>
+    <div class="field"><label class="flabel">Análise dos resultados</label>
+      <textarea class="ftext" id="motiv-results-gestao" placeholder="Como a equipe respondeu à ideia..." style="min-height:60px" onblur="saveMotivacionalGestao()"></textarea>
+    </div>
   </div>
 
-  <!-- REQUISIÇÕES PARA MODELOS -->
+  <!-- REQUISIÇÕES POR MODELO -->
   <div class="panel">
     <div class="panel-head"><div class="panel-title">📝 Requisições para modelos</div></div>
-    <textarea class="ftext" id="model-requests-text" placeholder="Ex: Momoi — precisa de foto nova para capa..." style="min-height:80px" onblur="saveModelRequests()"></textarea>
+    <div id="model-requests-split-list"></div>
   </div>
 
   <!-- REQUISIÇÕES DE HORÁRIOS -->
@@ -775,19 +808,21 @@ body{
     </div>
   </div>
 
-  <!-- ROTINA DE ESTUDOS -->
+  <!-- ANÁLISE DIÁRIA DO CHAT -->
   <div class="panel">
-    <div class="panel-head">
-      <div class="panel-title">📚 Rotina de estudos</div>
-      <button class="btn btn-ghost btn-xs" onclick="openModal('m-study')">+ item</button>
+    <div class="panel-head"><div class="panel-title">🔍 Análise diária do chat</div><button class="btn btn-primary btn-xs" onclick="openChatAnalysis()">+ nova análise</button></div>
+    <div style="margin-bottom:10px">
+      <select class="fselect" id="chat-analysis-chatter" onchange="renderChatAnalysisList()">
+        <option value="">— selecionar chatter —</option>
+      </select>
     </div>
-    <div id="study-list"></div>
+    <div id="chat-analysis-list"></div>
   </div>
 
   <!-- ORIENTAÇÕES -->
   <div class="panel">
     <div class="panel-head">
-      <div><div class="panel-title">Orientações</div><div class="panel-note">Follow-up do dia anterior</div></div>
+      <div><div class="panel-title">Orientações</div></div>
       <button class="btn btn-ghost btn-xs" onclick="openModal('m-orient')">+ nova</button>
     </div>
     <div id="orient-list"></div>
@@ -818,29 +853,24 @@ body{
 <section class="view" id="v-estudos">
   <div class="eyebrow">desenvolvimento</div>
   <div class="view-title">Rotina de Estudos</div>
-  <div class="view-sub">Seu progresso semanal de desenvolvimento pessoal</div>
 
-  <!-- PONTOS FORTES E FRACOS -->
   <div class="panel">
     <div class="panel-head">
-      <div><div class="panel-title">💪 Pontos fortes e fracos</div><div class="panel-note">Atualizado semanalmente</div></div>
-      <button class="btn btn-soft btn-xs" onclick="saveEstudosSnapshot()">💾 salvar snapshot</button>
+      <div><div class="panel-title">💪 Pontos fortes e fracos</div></div>
+      <button class="btn btn-soft btn-xs" onclick="saveEstudosSnapshot()">💾 salvar</button>
     </div>
-    <div class="field">
-      <label class="flabel">✅ Pontos fortes</label>
-      <textarea class="ftext" id="estudos-fortes" placeholder="O que você já faz bem..." style="min-height:70px" onblur="saveEstudosDraft()"></textarea>
-    </div>
-    <div class="field">
-      <label class="flabel">⚠️ Pontos a melhorar</label>
-      <textarea class="ftext" id="estudos-fracos" placeholder="O que precisa desenvolver..." style="min-height:70px" onblur="saveEstudosDraft()"></textarea>
-    </div>
-    <div class="field">
-      <label class="flabel">🎯 Foco desta semana</label>
-      <textarea class="ftext" id="estudos-foco" placeholder="Uma coisa principal para focar..." style="min-height:50px" onblur="saveEstudosDraft()"></textarea>
-    </div>
+    <div class="field"><label class="flabel">✅ Ponto forte 1</label><textarea class="ftext" id="estudos-fortes1" placeholder="..." style="min-height:50px" onblur="saveEstudosDraft()"></textarea></div>
+    <div class="field"><label class="flabel">✅ Ponto forte 2</label><textarea class="ftext" id="estudos-fortes2" placeholder="..." style="min-height:50px" onblur="saveEstudosDraft()"></textarea></div>
+    <div class="field"><label class="flabel">✅ Ponto forte 3</label><textarea class="ftext" id="estudos-fortes3" placeholder="..." style="min-height:50px" onblur="saveEstudosDraft()"></textarea></div>
+    <div class="field"><label class="flabel">⚠️ A melhorar 1</label><textarea class="ftext" id="estudos-fracos1" placeholder="..." style="min-height:50px" onblur="saveEstudosDraft()"></textarea></div>
+    <div class="field"><label class="flabel">⚠️ A melhorar 2</label><textarea class="ftext" id="estudos-fracos2" placeholder="..." style="min-height:50px" onblur="saveEstudosDraft()"></textarea></div>
+    <div class="field"><label class="flabel">⚠️ A melhorar 3</label><textarea class="ftext" id="estudos-fracos3" placeholder="..." style="min-height:50px" onblur="saveEstudosDraft()"></textarea></div>
+    <div class="field"><label class="flabel">🎯 Foco 1</label><input class="finput" id="estudos-foco1" placeholder="..." onblur="saveEstudosDraft()"></div>
+    <div class="field"><label class="flabel">🎯 Foco 2</label><input class="finput" id="estudos-foco2" placeholder="..." onblur="saveEstudosDraft()"></div>
+    <div class="field"><label class="flabel">🎯 Foco 3</label><input class="finput" id="estudos-foco3" placeholder="..." onblur="saveEstudosDraft()"></div>
+    <button class="btn btn-primary btn-block" style="margin-top:10px" onclick="saveEstudosSnapshot()">💾 Salvar snapshot desta semana</button>
   </div>
 
-  <!-- LISTA DE MATERIAIS -->
   <div class="panel">
     <div class="panel-head">
       <div class="panel-title">📚 Materiais de estudo</div>
@@ -849,13 +879,19 @@ body{
     <div id="study-list"></div>
   </div>
 
-  <!-- RELATÓRIO DE EVOLUÇÃO -->
   <div class="panel">
-    <div class="panel-head">
-      <div><div class="panel-title">📈 Histórico de evolução</div><div class="panel-note">Snapshots salvos cronologicamente</div></div>
-    </div>
+    <div class="panel-head"><div class="panel-title">📈 Histórico de evolução</div></div>
     <div id="estudos-historico"></div>
   </div>
+</section>
+
+
+<!-- ===================== EVOLUÇÃO ===================== -->
+<section class="view" id="v-evolucao">
+  <div class="eyebrow">desenvolvimento</div>
+  <div class="view-title">Evolução</div>
+  <div class="view-sub">Resumo automático de toda a equipe + você</div>
+  <div id="evolucao-content"></div>
 </section>
 
 </main>
@@ -873,6 +909,43 @@ body{
 </div>
 
 <!-- ===================================================== MODALS ===================================================== -->
+
+
+<!-- MANAGER PROFILE MODAL -->
+<div class="modalbg" id="m-manager-profile"><div class="modal">
+  <div class="modal-handle"></div>
+  <div class="modal-title">Meu Perfil</div>
+  <div class="field"><label class="flabel">Nome</label><input class="finput" id="mgr-name" placeholder="Seu nome..."></div>
+  <div class="field"><label class="flabel">Cargo</label><input class="finput" id="mgr-cargo" placeholder="Ex: Gestor de Chatters"></div>
+  <div class="field"><label class="flabel">Foto</label>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+      <div id="mgr-photo-preview" style="width:60px;height:60px;border-radius:50%;background:var(--bg-soft);border:2px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:24px;overflow:hidden">👤</div>
+      <label class="btn btn-soft btn-sm" style="cursor:pointer">📷 escolher foto<input type="file" accept="image/*" style="display:none" onchange="loadManagerPhoto(this)"></label>
+    </div>
+  </div>
+  <div class="modalbtns">
+    <button class="btn btn-ghost btn-block" onclick="closeModal('m-manager-profile')">Cancelar</button>
+    <button class="btn btn-primary btn-block" onclick="saveManagerProfile()">Salvar</button>
+  </div>
+</div></div>
+
+<!-- CHAT ANALYSIS MODAL -->
+<div class="modalbg" id="m-chat-analysis"><div class="modal">
+  <div class="modal-handle"></div>
+  <div class="modal-title">🔍 Análise do Chat</div>
+  <div class="field"><label class="flabel">Chatter</label>
+    <select class="fselect" id="ca-chatter"></select>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+    ${['Conexão','Condução','Engajamento','Conversão','Resposta','Naturalidade'].map(m=>`<div><label class="flabel">${m}</label><select class="fselect" id="ca-${m.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')}"><option value="">—</option>${[1,2,3,4,5].map(n=>`<option value="${n}">${n}</option>`).join('')}</select></div>`).join('')}
+  </div>
+  <div class="field"><label class="flabel">Pontos fortes</label><textarea class="ftext" id="ca-fortes" placeholder="O que foi bem..." style="min-height:60px"></textarea></div>
+  <div class="field"><label class="flabel">Pontos fracos</label><textarea class="ftext" id="ca-fracos" placeholder="O que melhorar..." style="min-height:60px"></textarea></div>
+  <div class="modalbtns">
+    <button class="btn btn-ghost btn-block" onclick="closeModal('m-chat-analysis')">Cancelar</button>
+    <button class="btn btn-primary btn-block" onclick="saveChatAnalysis()">Salvar análise</button>
+  </div>
+</div></div>
 
 <div class="modalbg" id="m-model"><div class="modal">
   <div class="modal-handle"></div><div class="modal-title">Novo modelo</div>
@@ -1121,6 +1194,7 @@ body{
 
 <div class="toast" id="toast"></div>
 
-<script src="app.js"></script>
+<script src="firebase-bundle.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

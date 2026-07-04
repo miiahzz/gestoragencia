@@ -27,6 +27,12 @@ function migrateState(s){
   if(!s.chatterFichas)s.chatterFichas={};
   if(!s.estudosDraft)s.estudosDraft={};
   if(!s.estudosHistory)s.estudosHistory=[];
+  if(!s.managerProfile)s.managerProfile={};
+  if(!s.motivacionalHome)s.motivacionalHome={};
+  if(!s.chatAnalyses)s.chatAnalyses={};
+  if(!s.semanaObjetivos)s.semanaObjetivos={};
+  if(!s.modelRequestsSplit)s.modelRequestsSplit={};
+  if(!s.demandas2)s.demandas2={};
   if(Array.isArray(s.shifts))s.shifts=s.shifts.map(sh=>({start2:'',end2:'',folgaDia:'',modelIds:[],...sh}));
   if(!s.chatterTrainings)s.chatterTrainings=[];
   if(s.hasSeededStudies===undefined)s.hasSeededStudies=false;
@@ -247,8 +253,14 @@ let S={
   motivational:{},       // weekKey -> {idea, chatters:{id:{issue, help}}}
   scheduleRequests:{},   // weekKey -> [{id, chatterId, text}]
   chatterFichas:{},      // chatterId -> {tech, behavior, potential, risk, history}
-  estudosDraft:{},       // {fortes, fracos, foco} — current week draft
-  estudosHistory:[],     // [{date, fortes, fracos, foco}] — snapshots over time
+  estudosDraft:{},       // {fortes1,fortes2,fortes3,fracos1,fracos2,fracos3,foco1,foco2,foco3}
+  estudosHistory:[],     // [{date, ...draft}] — snapshots
+  managerProfile:{},     // {name, cargo, photoUrl}
+  motivacionalHome:{},   // weekKey -> {idea, results}
+  chatAnalyses:{},       // dateKey -> [{id, chatterId, ...scores, pontosFracos, pontosFortes}]
+  semanaObjetivos:{},    // weekKey -> [{id, label, valor, done}]
+  modelRequestsSplit:{}, // weekKey -> {modelId: text}
+  demandas2:{},          // dateKey -> [{id,text,date,done}]  (new demandas with date)
 };
 
 /* ===========================================================
@@ -303,7 +315,7 @@ function money(n){return 'R$ '+ (n||0).toLocaleString('pt-BR',{minimumFractionDi
 function moneyShort(n){return 'R$'+(n||0).toLocaleString('pt-BR',{maximumFractionDigits:0});}
 
 // ---------- NAV ----------
-const VIEWS=['home','turno','semana','time','fat','report','extra','teamreports','gestao','fichas','estudos'];
+const VIEWS=['home','turno','semana','time','fat','report','extra','teamreports','gestao','fichas','estudos','evolucao'];
 function navTo(view){
   if(!view)return;
   VIEWS.forEach(v=>{const el=document.getElementById('v-'+v);if(el)el.classList.remove('active');});
@@ -325,6 +337,7 @@ function renderView(v){
   if(v==='gestao')renderGestao();
   if(v==='fichas')renderFichas();
   if(v==='estudos')renderEstudos();
+  if(v==='evolucao')renderEvolucao();
 }
 document.querySelectorAll('.toptab,.navbtn').forEach(el=>el.addEventListener('click',()=>navTo(el.dataset.go)));
 
@@ -659,9 +672,11 @@ function renderMidnightPreviewHome(){
   const tasks=S.midnightTasks[key]||[];
   const pending=tasks.filter(t=>!t.done).length;
   const panel=document.getElementById('home-midnight-panel');
+  if(!panel)return;
   if(pending>0){
     panel.style.display='block';
-    document.getElementById('home-midnight-preview').innerHTML=tasks.filter(t=>!t.done).slice(0,3).map(t=>`
+    const prev=document.getElementById('home-midnight-preview');
+    if(prev)prev.innerHTML=tasks.filter(t=>!t.done).slice(0,3).map(t=>`
       <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">
         <div style="width:7px;height:7px;border-radius:50%;background:var(--warn)"></div>
         <span style="font-size:12.5px">${t.label}</span>
@@ -722,6 +737,7 @@ function isFolgaActive(){
 }
 function renderFolgaPanel(){
   const panel=document.getElementById('home-folga-panel');
+  if(!panel)return;
   const el=document.getElementById('home-folga-content');
   if(!panel||!el)return;
   const tomorrow=getTomorrowKey();
@@ -922,11 +938,14 @@ function getSmartAlerts(){
   // Para cada modelo que tem chatters escalados hoje, verifica se algum está online
   if(S.models.length>0&&now.getHours()>=8&&now.getHours()<=23){
     S.models.forEach(m=>{
-      // Chatters escalados hoje nessa modelo (via shift.modelIds)
+      // Check escalados - only básico chatters have shifts
       const escaladosNaModelo=S.shifts.filter(s=>
         s.days&&s.days.includes(todayDayKey)&&
         (s.modelIds||[]).includes(m.id)
-      ).map(s=>s.chatterId);
+      ).map(s=>s.chatterId).filter(cid=>{
+        const ch=S.chatters.find(c=>c.id===cid);
+        return ch&&ch.time!=='elite'; // Elite don't work scheduled hours
+      });
 
       if(!escaladosNaModelo.length)return; // modelo sem ninguém escalado hoje — não alerta
 
@@ -1056,11 +1075,13 @@ function renderSmartAlerts(){
 
 function renderHome(){
   renderWatchBanner();
-  renderMidnightPreviewHome();
-  renderFolgaPanel();
   renderEscritorioPanel();
   renderUrgentPanel();
   renderSmartAlerts();
+  renderJanelaPanel();
+  renderMotivacionalHome();
+  render48hAlerts();
+  renderMidnightPreviewHome(); // null-guarded
 }
 
 function renderEscritorioPanel(){
@@ -1229,12 +1250,14 @@ function getChatterStatus(chatterId,dateKey){
 
 function getCurrentOnline(){
   const today=todayKey();
-  return S.chatters.filter(c=>['online','overtime'].includes(getChatterStatus(c.id,today)));
+  // Elite chatters work off-schedule — exclude from auto status
+  return S.chatters.filter(c=>c.time!=='elite'&&['online','overtime'].includes(getChatterStatus(c.id,today)));
 }
 function getCurrentScheduledToday(){
   const todayDK=getTodayDayKey();
   const today=todayKey();
   return S.chatters.filter(c=>{
+    if(c.time==='elite')return false; // Elite work off-schedule
     const hasShift=S.shifts.some(s=>s.chatterId===c.id&&(s.days||[]).includes(todayDK));
     const hasSwap=S.swaps.some(sw=>sw.date===today&&sw.covererId===c.id);
     const gaveAway=S.swaps.some(sw=>sw.date===today&&sw.originalId===c.id);
@@ -1290,7 +1313,7 @@ function renderTurnoDay(){
     const gaveAway=S.swaps.some(sw=>sw.date===today&&sw.originalId===s.chatterId);
     if(gaveAway)return;
     const c=S.chatters.find(ch=>ch.id===s.chatterId);
-    if(!c)return;
+    if(!c||c.time==='elite')return; // Elite off-schedule
     const allShifts=S.shifts.filter(x=>x.chatterId===c.id&&(x.days||[]).includes(todayDK));
     const models=[...new Set(allShifts.flatMap(x=>x.modelIds||[]))].map(mid=>S.models.find(m=>m.id===mid)).filter(Boolean);
     const windows=allShifts.flatMap(x=>{
@@ -1325,7 +1348,7 @@ function renderTurnoDay(){
   const statusColors={on:'var(--ok)',next:'var(--warn)',done:'var(--text3)'};
   const statusIcons={on:'🟢',next:'⏳',done:'⚫'};
 
-  el.innerHTML=rows.map(r=>{
+  const renderRow=r=>{
     const timeStr=r.windows.map(w=>`${w.start}–${w.end}`).join(' · ');
     const modelStr=r.models.map(m=>`${m.emoji||'🧩'} ${m.name}`).join(' · ');
     const color=statusColors[r.status];
@@ -1337,7 +1360,17 @@ function renderTurnoDay(){
       </div>
       <span style="font-size:11px;color:${color};font-weight:700">${r.status==='on'?'online':r.status==='next'?'aguardando':'encerrado'}</span>
     </div>`;
-  }).join('');
+  };
+
+  const basico=rows.filter(r=>r.c.time!=='elite');
+
+  let html='';
+  if(!basico.length){
+    html='<div style="color:var(--text3);font-size:13px;padding:12px 0;text-align:center">Nenhum chatter do Time Básico escalado hoje</div>';
+  } else {
+    html+=basico.map(renderRow).join('');
+  }
+  el.innerHTML=html;
 }
 
 function renderTurnoWeek(){
@@ -1372,15 +1405,22 @@ function renderTurnoWeek(){
     // Sort shifts by start time
     const sorted=[...g.shifts].sort((a,b)=>a.start.localeCompare(b.start));
 
-    const rows=sorted.map(s=>{
+    const sorted2=sorted
+      .filter(s=>{const c=S.chatters.find(ch=>ch.id===s.chatterId);return !c||c.time!=='elite';})
+      .sort((a,b)=>{
+        const toMins=t=>{if(!t)return 9999;const[h,m]=t.split(':').map(Number);return h<7?h*60+m+1440:h*60+m;};
+        return toMins(a.start)-toMins(b.start);
+      });
+    const rows=sorted2.map(s=>{
       const c=S.chatters.find(ch=>ch.id===s.chatterId);
       const name=c?c.name:'—';
       const t1=`${s.start}–${s.end}`;
       const t2=s.start2&&s.end2?`${s.start2}–${s.end2}`:'';
       const folgaLabel=s.folgaDia?` <span style="font-size:10px;color:var(--bad)">(folga ${s.folgaDia})</span>`:'';
-      return`<div onclick="openEditShiftFromProfile('${s.id}','${s.chatterId}')" style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);cursor:pointer">
-        <div style="font-family:var(--font-mono);font-size:12.5px;color:var(--warn);min-width:110px;flex-shrink:0">${t1}${t2?' · '+t2:''}</div>
-        <div style="font-size:13.5px;font-weight:700;flex:1">${name}${folgaLabel}</div>
+      return`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)">
+        <div onclick="openEditShiftFromProfile('${s.id}','${s.chatterId}')" style="font-family:var(--font-mono);font-size:12.5px;color:var(--warn);min-width:110px;flex-shrink:0;cursor:pointer">${t1}${t2?' · '+t2:''}</div>
+        <div onclick="openEditShiftFromProfile('${s.id}','${s.chatterId}')" style="font-size:13.5px;font-weight:700;flex:1;cursor:pointer">${name}${folgaLabel}</div>
+        <button onclick="deleteShift('${s.id}')" style="background:none;border:none;color:var(--bad);cursor:pointer;font-size:15px;padding:2px 6px">✕</button>
       </div>`;
     }).join('');
 
@@ -2519,12 +2559,14 @@ let selectedFatDate=todayKey(); // currently selected date for revenue entry
 
 function renderFat(){
   renderModelsList();
-  // Sync date picker
   const picker=document.getElementById('fat-date-picker');
   if(picker)picker.value=selectedFatDate;
   const dateLb=document.getElementById('fat-date-lb');
   if(dateLb)dateLb.textContent=selectedFatDate===todayKey()?'Hoje · '+selectedFatDate:selectedFatDate;
   renderRevenueTable();
+  renderMetaProgress();
+  renderExtraProgress();
+  renderChatterAnalysis();
   renderReport('week');
   renderDailyByModel();
   renderDailyByChatter();
@@ -2918,7 +2960,6 @@ function openEditShift(shiftId){
     document.querySelectorAll('#m-shift .chip-folga').forEach(c=>c.classList.toggle('sel',c.dataset.folga===(s.folgaDia||'')));
   },40);
 }
-function deleteShift(id){S.shifts=S.shifts.filter(s=>s.id!==id);save();renderScheduleForDay(selectedDay);renderAlarmList();toast('Removido');}
 
 /* ===========================================================
    TROCAS DE HORÁRIO
@@ -3356,6 +3397,7 @@ function addProblem(){
 }
 function addDemanda(){
   const inp=document.getElementById('demandas-input');
+  if(!inp)return;
   const text=inp?.value.trim();if(!text)return;
   const today=todayKey();
   if(!S.demandas[today])S.demandas[today]=[];
@@ -3414,7 +3456,7 @@ function deleteTraining(id){if(!confirm('Excluir treinamento?'))return;S.trainin
 // ---- EVOLUÇÕES SEMANAIS ----
 function renderWeekEvolutions(){
   const el=document.getElementById('week-evolution-list');
-  if(!el)return;
+  if(!el)return; // removed from UI
   const wkey=getWeekKey();
   const items=S.weekEvolutions[wkey]||[];
   if(!items.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Adicione itens de evolução. Ao fim da semana um aviso aparecerá para os não feitos.</div>';return;}
@@ -3470,7 +3512,8 @@ function savePrize(){
 
 // ---- MOTIVACIONAL ----
 function renderMotivacional(){
-  const el=document.getElementById('motivational-panel');if(!el)return;
+  const el=document.getElementById('motivational-panel');
+  if(!el)return;
   const wkey=getWeekKey();
   if(!S.motivational[wkey])S.motivational[wkey]={idea:'',chatters:{}};
   const data=S.motivational[wkey];
@@ -3501,7 +3544,9 @@ function saveMotivacional(){
 }
 function saveModelRequests(){
   const wkey=getWeekKey();
-  S.modelRequests[wkey]=document.getElementById('model-requests-text')?.value||'';
+  const el=document.getElementById('model-requests-text');
+  if(!el)return;
+  S.modelRequests[wkey]=el.value||'';
   save();
 }
 
@@ -3534,25 +3579,6 @@ function addScheduleRequest(){
 }
 function removeScheduleRequest(id){const wkey=getWeekKey();S.scheduleRequests[wkey]=(S.scheduleRequests[wkey]||[]).filter(x=>x.id!==id);save();renderScheduleRequests();}
 
-function renderGestao(){
-  renderMorningRoutine();
-  renderDailyList('problemsToday','problems-list','problems-badge');
-  renderDailyList('demandas','demandas-list','');
-  renderTrainings();
-  renderWeekEvolutions();
-  renderPrizePanel();
-  renderMotivacional();
-  // Model requests
-  const wkey=getWeekKey();
-  const mrEl=document.getElementById('model-requests-text');
-  if(mrEl&&!mrEl.value)mrEl.value=S.modelRequests[wkey]||'';
-  renderScheduleRequests();
-  const sel=document.getElementById('sched-req-chatter');
-  if(sel&&!sel.options.length)sel.innerHTML=S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
-  renderStudyList();
-  renderOrientList();
-  renderMidnightList();
-}
 
 /* ===========================================================
    FICHAS DOS CHATTERS — ficha seduct format with history
@@ -3560,18 +3586,7 @@ function renderGestao(){
 /* ===========================================================
    ESTUDOS — personal development tracking with snapshots
    =========================================================== */
-function renderEstudos(){
-  // Load draft into fields
-  const d=S.estudosDraft||{};
-  const f=document.getElementById('estudos-fortes');
-  const fr=document.getElementById('estudos-fracos');
-  const fo=document.getElementById('estudos-foco');
-  if(f&&!f.value)f.value=d.fortes||'';
-  if(fr&&!fr.value)fr.value=d.fracos||'';
-  if(fo&&!fo.value)fo.value=d.foco||'';
-  renderStudyList();
-  renderEstudosHistorico();
-}
+
 function setChatterTime(chatterId,time){
   const c=S.chatters.find(ch=>ch.id===chatterId);
   if(!c)return;
@@ -3593,43 +3608,8 @@ function setChatterTime(chatterId,time){
   toast(`✅ ${c.name} → ${time==='elite'?'⭐ Time Elite':'Time Básico'}`);
   renderTeam(teamFilter);
 }
-function saveEstudosDraft(){
-  const f=document.getElementById('estudos-fortes');
-  const fr=document.getElementById('estudos-fracos');
-  const fo=document.getElementById('estudos-foco');
-  S.estudosDraft={
-    fortes:f?.value||'',
-    fracos:fr?.value||'',
-    foco:fo?.value||''
-  };
-  save();
-}
-function saveEstudosSnapshot(){
-  saveEstudosDraft();
-  const d=S.estudosDraft;
-  if(!d.fortes&&!d.fracos&&!d.foco){toast('⚠️ Preencha pelo menos um campo');return;}
-  if(!S.estudosHistory)S.estudosHistory=[];
-  S.estudosHistory.push({date:todayKey(),...d});
-  save();
-  renderEstudosHistorico();
-  toast('✅ Snapshot salvo!');
-}
-function renderEstudosHistorico(){
-  const el=document.getElementById('estudos-historico');
-  if(!el)return;
-  const history=S.estudosHistory||[];
-  if(!history.length){
-    el.innerHTML='<div style="color:var(--text3);font-size:12.5px;padding:8px 0">Nenhum snapshot salvo ainda. Preencha os campos acima e clique em "💾 salvar snapshot".</div>';
-    return;
-  }
-  el.innerHTML=[...history].reverse().map((snap,i)=>`
-    <div style="padding:12px 0;border-bottom:1px solid var(--line)">
-      <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:8px">${snap.date}${i===0?' · <span style="color:var(--ok)">mais recente</span>':''}</div>
-      ${snap.fortes?`<div style="margin-bottom:6px"><div style="font-size:11px;font-weight:700;color:var(--ok);margin-bottom:3px">✅ FORTES</div><div style="font-size:13px;color:var(--text);line-height:1.5">${snap.fortes}</div></div>`:''}
-      ${snap.fracos?`<div style="margin-bottom:6px"><div style="font-size:11px;font-weight:700;color:var(--warn);margin-bottom:3px">⚠️ A MELHORAR</div><div style="font-size:13px;color:var(--text);line-height:1.5">${snap.fracos}</div></div>`:''}
-      ${snap.foco?`<div><div style="font-size:11px;font-weight:700;color:var(--info);margin-bottom:3px">🎯 FOCO</div><div style="font-size:13px;color:var(--text)">${snap.foco}</div></div>`:''}
-    </div>`).join('');
-}
+
+
 
 function renderFichas(){
   const sel=document.getElementById('ficha-chatter-select');
@@ -3981,3 +3961,509 @@ if(!S.hasSeededStudies&&!S.studies.length){
 
 updateClock();setInterval(updateClock,1000);
 renderHome();
+
+/* ===========================================================
+   MANAGER PROFILE
+   =========================================================== */
+function renderManagerProfile(){
+  const el=document.getElementById('manager-profile-display');
+  if(!el)return;
+  const p=S.managerProfile||{};
+  if(!p.name&&!p.cargo){
+    el.innerHTML='<div style="color:var(--text3);font-size:13px;text-align:center;padding:8px">Clique em editar para configurar seu perfil</div>';
+    return;
+  }
+  el.innerHTML=`<div style="display:flex;align-items:center;gap:14px">
+    <div style="width:56px;height:56px;border-radius:50%;overflow:hidden;background:var(--bg-soft);border:2px solid var(--line);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:24px">
+      ${p.photoUrl?`<img src="${p.photoUrl}" style="width:100%;height:100%;object-fit:cover">`:'👤'}
+    </div>
+    <div><div style="font-weight:800;font-size:16px">${p.name||'Gestor'}</div>
+    <div style="font-size:12.5px;color:var(--text2)">${p.cargo||''}</div></div>
+  </div>`;
+}
+function openManagerProfileModal(){
+  const p=S.managerProfile||{};
+  const nameEl=document.getElementById('mgr-name');
+  const cargoEl=document.getElementById('mgr-cargo');
+  if(nameEl)nameEl.value=p.name||'';
+  if(cargoEl)cargoEl.value=p.cargo||'';
+  const preview=document.getElementById('mgr-photo-preview');
+  if(preview&&p.photoUrl)preview.innerHTML=`<img src="${p.photoUrl}" style="width:100%;height:100%;object-fit:cover">`;
+  openModal('m-manager-profile');
+}
+function loadManagerPhoto(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const preview=document.getElementById('mgr-photo-preview');
+    if(preview)preview.innerHTML=`<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover">`;
+    if(!S.managerProfile)S.managerProfile={};
+    S.managerProfile.photoUrl=e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+function saveManagerProfile(){
+  if(!S.managerProfile)S.managerProfile={};
+  S.managerProfile.name=document.getElementById('mgr-name')?.value||'';
+  S.managerProfile.cargo=document.getElementById('mgr-cargo')?.value||'';
+  save();closeModal('m-manager-profile');
+  renderManagerProfile();toast('✅ Perfil salvo!');
+}
+
+/* ===========================================================
+   DEMANDAS 2 — with dates and 48h alerts
+   =========================================================== */
+function renderDemandas2(){
+  const el=document.getElementById('demandas2-list');
+  if(!el)return;
+  const today=todayKey();
+  const items=S.demandas2[today]||[];
+  if(!items.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Nenhuma demanda</div>';return;}
+  el.innerHTML=items.map(item=>{
+    const overdue=item.date&&item.date<today;
+    const near=item.date&&!overdue&&isWithin48h(item.date);
+    return`<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
+      <button onclick="toggleDemanda2('${item.id}')" style="width:22px;height:22px;border-radius:5px;border:2px solid ${item.done?'var(--ok)':'var(--line)'};background:${item.done?'var(--ok)':'transparent'};cursor:pointer;flex-shrink:0;margin-top:2px;display:flex;align-items:center;justify-content:center">${item.done?'<span style="color:#fff;font-size:11px">✓</span>':''}</button>
+      <div style="flex:1">
+        <div style="font-size:13.5px;${item.done?'text-decoration:line-through;color:var(--text3)':''}">${item.text}</div>
+        ${item.date?`<div style="font-size:11px;color:${overdue?'var(--bad)':near?'var(--warn)':'var(--text3)'};margin-top:2px">${overdue?'⚠️ vencida':'📅'} ${item.date}</div>`:''}
+      </div>
+      <button onclick="removeDemanda2('${item.id}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px">✕</button>
+    </div>`;
+  }).join('');
+  const dateEl=document.getElementById('demandas2-date');
+  if(dateEl&&!dateEl.value)dateEl.value=today;
+}
+function isWithin48h(dateStr){
+  const d=new Date(dateStr+'T23:59:00');
+  const diff=d-new Date();
+  return diff>0&&diff<=48*3600*1000;
+}
+function addDemanda2(){
+  const text=document.getElementById('demandas2-text')?.value.trim();
+  const date=document.getElementById('demandas2-date')?.value||'';
+  if(!text)return;
+  const today=todayKey();
+  if(!S.demandas2[today])S.demandas2[today]=[];
+  S.demandas2[today].push({id:'d2'+Date.now(),text,date,done:false});
+  document.getElementById('demandas2-text').value='';
+  save();renderDemandas2();
+}
+function toggleDemanda2(id){
+  const today=todayKey();
+  const item=(S.demandas2[today]||[]).find(x=>x.id===id);
+  if(item){item.done=!item.done;save();renderDemandas2();}
+}
+function removeDemanda2(id){
+  const today=todayKey();
+  S.demandas2[today]=(S.demandas2[today]||[]).filter(x=>x.id!==id);
+  save();renderDemandas2();
+}
+
+/* ===========================================================
+   MOTIVACIONAL HOME
+   =========================================================== */
+function renderMotivacionalHome(){
+  const el=document.getElementById('home-motiv-content');
+  if(!el)return;
+  const wkey=getWeekKey();
+  const data=S.motivacionalHome[wkey]||{};
+  if(!data.idea){
+    el.innerHTML=`<div style="color:var(--text3);font-size:13px">Nenhuma ideia motivacional esta semana.<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="navTo('gestao')">Adicionar na Gestão →</button></div>`;
+    return;
+  }
+  el.innerHTML=`<div style="font-size:14px;line-height:1.6;color:var(--text)">${data.idea}</div>
+    ${data.results?`<div style="margin-top:8px;font-size:12px;color:var(--text2);border-top:1px solid var(--line);padding-top:8px"><strong>Resultado:</strong> ${data.results}</div>`:''}`;
+}
+function openMotivacionalHome(){navTo('gestao');}
+function saveMotivacionalGestao(){
+  const wkey=getWeekKey();
+  if(!S.motivacionalHome[wkey])S.motivacionalHome[wkey]={};
+  S.motivacionalHome[wkey].idea=document.getElementById('motiv-idea-gestao')?.value||'';
+  S.motivacionalHome[wkey].results=document.getElementById('motiv-results-gestao')?.value||'';
+  save();renderMotivacionalHome();
+}
+
+/* ===========================================================
+   JANELA DE TURNOS — empty slots in upcoming days
+   =========================================================== */
+function renderJanelaPanel(){
+  const panel=document.getElementById('home-janela-panel');
+  const list=document.getElementById('home-janela-list');
+  if(!panel||!list)return;
+  const DAY_KEYS=['dom','seg','ter','qua','qui','sex','sab'];
+  const DAY_LABEL={seg:'Seg',ter:'Ter',qua:'Qua',qui:'Qui',sex:'Sex',sab:'Sáb',dom:'Dom'};
+  const gaps=[];
+  // Check next 7 days for models without any coverage
+  for(let i=1;i<=7;i++){
+    const d=new Date();d.setDate(d.getDate()+i);
+    const dk=DAY_KEYS[d.getDay()];
+    S.models.forEach(m=>{
+      const covered=S.shifts.some(s=>(s.days||[]).includes(dk)&&(s.modelIds||[]).includes(m.id));
+      if(!covered)gaps.push({day:DAY_LABEL[dk],date:fmt(d),model:m});
+    });
+  }
+  if(!gaps.length){panel.style.display='none';return;}
+  panel.style.display='block';
+  list.innerHTML=gaps.slice(0,6).map(g=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)">
+      <span style="font-size:16px">${g.model.emoji||'🧩'}</span>
+      <div><div style="font-weight:600;font-size:13px">${g.model.name}</div>
+      <div style="font-size:11.5px;color:var(--text2)">${g.day} ${g.date} — sem cobertura</div></div>
+    </div>`).join('');
+}
+
+/* ===========================================================
+   48H DEADLINE ALERTS for demandas in home panel
+   =========================================================== */
+function render48hAlerts(){
+  const el=document.getElementById('home-demandas-urgentes');
+  if(!el)return;
+  const today=todayKey();
+  const urgent=[];
+  // Check all demandas2 across days
+  Object.entries(S.demandas2||{}).forEach(([day,items])=>{
+    (items||[]).forEach(item=>{
+      if(!item.done&&item.date&&!urgent.find(x=>x.id===item.id)){
+        const overdue=item.date<today;
+        const near=!overdue&&isWithin48h(item.date);
+        if(overdue||near)urgent.push({...item,overdue});
+      }
+    });
+  });
+  // Check trainings
+  S.trainings.forEach(t=>{
+    if(t.date&&isWithin48h(t.date))urgent.push({id:'tr_'+t.id,text:`Treinamento: ${t.title}`,date:t.date,overdue:false,training:true});
+  });
+  if(!urgent.length){el.innerHTML='';return;}
+  el.innerHTML=`<div class="panel" style="border-color:var(--warn)">
+    <div class="panel-head"><div class="panel-title" style="color:var(--warn)">⏰ Próximas datas</div></div>
+    ${urgent.map(item=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
+      <span style="font-size:16px">${item.overdue?'🚨':'⏳'}</span>
+      <div style="flex:1"><div style="font-size:13px;font-weight:600">${item.text}</div>
+      <div style="font-size:11px;color:${item.overdue?'var(--bad)':'var(--warn)'}">${item.overdue?'Vencida:':'Prazo:'} ${item.date}</div></div>
+    </div>`).join('')}
+  </div>`;
+}
+
+/* ===========================================================
+   MODEL REQUESTS SPLIT
+   =========================================================== */
+function renderModelRequestsSplit(){
+  const el=document.getElementById('model-requests-split-list');
+  if(!el)return;
+  const wkey=getWeekKey();
+  if(!S.modelRequestsSplit)S.modelRequestsSplit={};
+  if(!S.modelRequestsSplit[wkey])S.modelRequestsSplit[wkey]={};
+  if(!S.models.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Cadastre modelos primeiro</div>';return;}
+  el.innerHTML=S.models.map(m=>`
+    <div style="margin-bottom:12px">
+      <label class="flabel">${m.emoji||'🧩'} ${m.name}</label>
+      <textarea class="ftext" id="mr-split-${m.id}" style="min-height:60px" placeholder="Requisições para ${m.name}..." onblur="saveModelRequestSplit('${m.id}')">${S.modelRequestsSplit[wkey][m.id]||''}</textarea>
+    </div>`).join('');
+}
+function saveModelRequestSplit(modelId){
+  const wkey=getWeekKey();
+  if(!S.modelRequestsSplit)S.modelRequestsSplit={};
+  if(!S.modelRequestsSplit[wkey])S.modelRequestsSplit[wkey]={};
+  S.modelRequestsSplit[wkey][modelId]=document.getElementById('mr-split-'+modelId)?.value||'';
+  save();
+}
+
+/* ===========================================================
+   CHAT ANALYSIS — daily per chatter, feeds ficha
+   =========================================================== */
+const CHAT_METRICS=['conexao','conducao','engajamento','conversao','resposta','naturalidade'];
+const CHAT_METRIC_LABELS={conexao:'Conexão',conducao:'Condução',engajamento:'Engajamento',conversao:'Conversão',resposta:'Resposta',naturalidade:'Naturalidade'};
+
+function openChatAnalysis(){
+  const sel=document.getElementById('ca-chatter');
+  if(sel)sel.innerHTML=S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  CHAT_METRICS.forEach(m=>{const el=document.getElementById('ca-'+m);if(el)el.value='';});
+  const f=document.getElementById('ca-fortes');const fr=document.getElementById('ca-fracos');
+  if(f)f.value='';if(fr)fr.value='';
+  openModal('m-chat-analysis');
+}
+function saveChatAnalysis(){
+  const chatterId=document.getElementById('ca-chatter')?.value;
+  if(!chatterId){toast('Selecione um chatter');return;}
+  const analysis={id:'ca'+Date.now(),chatterId,date:todayKey(),fortes:document.getElementById('ca-fortes')?.value||'',fracos:document.getElementById('ca-fracos')?.value||''};
+  CHAT_METRICS.forEach(m=>{analysis[m]=parseInt(document.getElementById('ca-'+m)?.value)||0;});
+  const today=todayKey();
+  if(!S.chatAnalyses[today])S.chatAnalyses[today]=[];
+  S.chatAnalyses[today].push(analysis);
+  // Auto-update chatter ficha with average scores
+  updateFichaFromAnalysis(chatterId);
+  save();closeModal('m-chat-analysis');renderChatAnalysisList();
+  toast('✅ Análise salva!');
+}
+function updateFichaFromAnalysis(chatterId){
+  if(!S.chatterFichas[chatterId])S.chatterFichas[chatterId]={tech:{},behavior:{},potential:{},risk:{},history:[]};
+  const f=S.chatterFichas[chatterId];
+  // Collect all analyses for this chatter
+  const allAnalyses=[];
+  Object.values(S.chatAnalyses).forEach(dayArr=>{
+    (dayArr||[]).filter(a=>a.chatterId===chatterId).forEach(a=>allAnalyses.push(a));
+  });
+  if(!allAnalyses.length)return;
+  const avg=key=>Math.round(allAnalyses.reduce((s,a)=>s+(a[key]||0),0)/allAnalyses.length);
+  // Map to ficha fields
+  const scores={conversao:avg('conversao'),resposta:avg('resposta'),evolucao:avg('engajamento')};
+  const labels={1:'1 - Fraco',2:'2 - Regular',3:'3 - Bom',4:'4 - Ótimo',5:'5 - Excelente'};
+  Object.entries(scores).forEach(([k,v])=>{if(v>0)f.tech[k]=labels[v]||String(v);});
+  const behavScores={intensidade:avg('conexao'),comunicacao:avg('conducao'),energia:avg('naturalidade')};
+  Object.entries(behavScores).forEach(([k,v])=>{if(v>0)f.behavior[k]=labels[v]||String(v);});
+}
+function renderChatAnalysisList(){
+  const el=document.getElementById('chat-analysis-list');
+  const sel=document.getElementById('chat-analysis-chatter');
+  if(!el)return;
+  // Populate select
+  if(sel&&!sel.options.length)sel.innerHTML='<option value="">— selecionar chatter —</option>'+S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  const chatterId=sel?.value;
+  if(!chatterId){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Selecione um chatter</div>';return;}
+  const analyses=[];
+  Object.entries(S.chatAnalyses).forEach(([date,arr])=>{
+    (arr||[]).filter(a=>a.chatterId===chatterId).forEach(a=>analyses.push({...a,date}));
+  });
+  analyses.sort((a,b)=>b.date.localeCompare(a.date));
+  if(!analyses.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Nenhuma análise para este chatter</div>';return;}
+  el.innerHTML=analyses.slice(0,5).map(a=>`
+    <div style="background:var(--bg-soft);border-radius:9px;padding:10px;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:7px">${a.date}</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px">
+        ${CHAT_METRICS.map(m=>`<div style="text-align:center;background:var(--bg);border-radius:7px;padding:6px 4px">
+          <div style="font-size:10px;color:var(--text3)">${CHAT_METRIC_LABELS[m]}</div>
+          <div style="font-size:18px;font-weight:800;color:${a[m]>=4?'var(--ok)':a[m]>=3?'var(--warn)':'var(--bad)'}">${a[m]||'—'}</div>
+        </div>`).join('')}
+      </div>
+      ${a.fortes?`<div style="font-size:12px"><strong>✅</strong> ${a.fortes}</div>`:''}
+      ${a.fracos?`<div style="font-size:12px;margin-top:4px"><strong>⚠️</strong> ${a.fracos}</div>`:''}
+    </div>`).join('');
+}
+
+/* ===========================================================
+   ESTUDOS — updated with 3 fields each
+   =========================================================== */
+function saveEstudosDraft(){
+  S.estudosDraft={};
+  ['fortes1','fortes2','fortes3','fracos1','fracos2','fracos3','foco1','foco2','foco3'].forEach(k=>{
+    S.estudosDraft[k]=document.getElementById('estudos-'+k)?.value||'';
+  });
+  save();
+}
+function renderEstudos(){
+  const d=S.estudosDraft||{};
+  ['fortes1','fortes2','fortes3','fracos1','fracos2','fracos3','foco1','foco2','foco3'].forEach(k=>{
+    const el=document.getElementById('estudos-'+k);
+    if(el&&!el.value)el.value=d[k]||'';
+  });
+  renderStudyList();
+  renderEstudosHistorico();
+}
+function saveEstudosSnapshot(){
+  saveEstudosDraft();
+  const d=S.estudosDraft;
+  const hasContent=Object.values(d).some(v=>v.trim());
+  if(!hasContent){toast('⚠️ Preencha pelo menos um campo');return;}
+  if(!S.estudosHistory)S.estudosHistory=[];
+  S.estudosHistory.push({date:todayKey(),...d});
+  save();renderEstudosHistorico();toast('✅ Snapshot salvo!');
+}
+function renderEstudosHistorico(){
+  const el=document.getElementById('estudos-historico');
+  if(!el)return;
+  const history=S.estudosHistory||[];
+  if(!history.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px;padding:8px 0">Nenhum snapshot ainda. Preencha e clique "💾 Salvar snapshot".</div>';return;}
+  el.innerHTML=[...history].reverse().map((snap,i)=>`
+    <div style="padding:12px 0;border-bottom:1px solid var(--line)">
+      <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:8px">${snap.date}${i===0?' · <span style="color:var(--ok)">mais recente</span>':''}</div>
+      ${[1,2,3].map(n=>snap['fortes'+n]?`<div style="margin-bottom:4px"><span style="font-size:11px;font-weight:700;color:var(--ok)">✅ FORTE ${n}</span><div style="font-size:13px;margin-top:2px">${snap['fortes'+n]}</div></div>`:'').join('')}
+      ${[1,2,3].map(n=>snap['fracos'+n]?`<div style="margin-bottom:4px"><span style="font-size:11px;font-weight:700;color:var(--warn)">⚠️ MELHORAR ${n}</span><div style="font-size:13px;margin-top:2px">${snap['fracos'+n]}</div></div>`:'').join('')}
+      ${[1,2,3].map(n=>snap['foco'+n]?`<div style="margin-bottom:4px"><span style="font-size:11px;font-weight:700;color:var(--info)">🎯 FOCO ${n}</span><div style="font-size:13px;margin-top:2px">${snap['foco'+n]}</div></div>`:'').join('')}
+    </div>`).join('');
+}
+
+/* ===========================================================
+   TURNO — delete shift button
+   =========================================================== */
+function deleteShift(shiftId){
+  if(!confirm('Remover este turno?'))return;
+  S.shifts=S.shifts.filter(s=>s.id!==shiftId);
+  save();renderTurno();toast('Turno removido');
+}
+
+/* ===========================================================
+   FATURAMENTO — meta progress + chatter analysis
+   =========================================================== */
+function renderMetaProgress(){
+  const el=document.getElementById('fat-meta-progress');
+  if(!el)return;
+  const wkey=getWeekKey();
+  const goals=S.chatterWeekGoals[wkey]||{};
+  const ativos=S.chatters.filter(c=>c.time!=='elite');
+  if(!ativos.length){el.innerHTML='';return;}
+  el.innerHTML=`<div style="margin-bottom:4px;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Metas da semana</div>`+
+  ativos.map(c=>{
+    const meta=parseFloat(goals[c.id])||0;
+    const rev=getChatterWeekRevenue(c.id);
+    const extra=getChatterExtraRevenue(c.id);
+    const pct=meta>0?Math.min(100,Math.round((rev/meta)*100)):0;
+    const falta=meta>0?Math.max(0,meta-rev):0;
+    return`<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <div style="font-weight:600;font-size:13px">${c.name}</div>
+        <div style="font-size:12px;font-family:var(--font-mono)">${moneyShort(rev)}${meta>0?` / ${moneyShort(meta)}`:''}</div>
+      </div>
+      ${meta>0?`<div style="background:var(--line);border-radius:4px;height:8px;overflow:hidden;margin-bottom:3px">
+        <div style="height:8px;border-radius:4px;background:${pct>=100?'var(--ok)':pct>=60?'var(--warn)':'var(--bad)'};width:${pct}%;transition:width .3s"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3)">
+        <span>${pct}%${extra>0?` · +${moneyShort(extra)} extra`:''}</span>
+        ${falta>0?`<span style="color:var(--bad)">falta ${moneyShort(falta)}</span>`:`<span style="color:var(--ok)">✅ meta batida!</span>`}
+      </div>`:`<div style="font-size:11px;color:var(--text3)">Sem meta definida${extra>0?` · extra: ${moneyShort(extra)}`:''}</div>`}
+    </div>`;
+  }).join('');
+}
+
+function renderExtraProgress(){
+  const el=document.getElementById('fat-extra-progress');
+  if(!el)return;
+  const chattersWithExtra=S.chatters.filter(c=>getChatterExtraRevenue(c.id)>0);
+  if(!chattersWithExtra.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Nenhuma hora extra registrada esta semana</div>';return;}
+  el.innerHTML=chattersWithExtra.map(c=>{
+    const extra=getChatterExtraRevenue(c.id);
+    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)">
+      <div style="font-weight:600;font-size:13px">${c.name}</div>
+      <div style="font-family:var(--font-mono);font-weight:700;color:var(--info)">⚡ ${money(extra)}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderChatterAnalysis(){
+  const el=document.getElementById('fat-chatter-analysis');
+  if(!el)return;
+  const sel=document.getElementById('fat-analysis-chatter');
+  if(sel&&!sel.options.length)sel.innerHTML='<option value="">— selecionar —</option>'+S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  const chatterId=sel?.value;
+  if(!chatterId){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Selecione um chatter para ver análise</div>';return;}
+  const wd=getWeekDates();
+  let totalRev=0,totalSales=0,firstSale=null,lastSale=null,longestGap=0,lastTime=null;
+  // Parse from team reports data (revenues by day)
+  wd.forEach(d=>{
+    const dateKey=fmt(d);
+    S.models.forEach(m=>{
+      const val=parseFloat(S.revenues[`${chatterId}_${m.id}_${dateKey}`])||0;
+      if(val>0){totalRev+=val;totalSales++;if(!firstSale)firstSale=dateKey;lastSale=dateKey;}
+    });
+  });
+  // Get analyses for this chatter
+  const analyses=[];
+  Object.values(S.chatAnalyses).forEach(arr=>(arr||[]).filter(a=>a.chatterId===chatterId).forEach(a=>analyses.push(a)));
+  const avgMetric=key=>analyses.length?Math.round(analyses.reduce((s,a)=>s+(a[key]||0),0)/analyses.length*10)/10:null;
+  const ticketMedio=totalSales>0?totalRev/totalSales:0;
+  const daysWorked=wd.filter(d=>S.models.some(m=>(parseFloat(S.revenues[`${chatterId}_${m.id}_${fmt(d)}`])||0)>0)).length;
+  const revPerHour=daysWorked>0?totalRev/(daysWorked*8):0; // assume 8h shifts
+  el.innerHTML=`
+    <div class="reprow"><div class="replb">Faturamento semana</div><div class="repval">${money(totalRev)}</div></div>
+    <div class="reprow"><div class="replb">Ticket médio</div><div class="repval">${money(ticketMedio)}</div></div>
+    <div class="reprow"><div class="replb">Fat. estimado/hora</div><div class="repval">${money(revPerHour)}/h</div></div>
+    <div class="reprow"><div class="replb">Dias com vendas</div><div class="repval">${daysWorked} dias</div></div>
+    ${analyses.length?`
+    <div style="margin-top:10px;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Média das análises (${analyses.length})</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+      ${CHAT_METRICS.map(m=>{const v=avgMetric(m);return v!==null?`<div style="text-align:center;background:var(--bg-soft);border-radius:7px;padding:6px 4px">
+        <div style="font-size:10px;color:var(--text3)">${CHAT_METRIC_LABELS[m]}</div>
+        <div style="font-size:18px;font-weight:800;color:${v>=4?'var(--ok)':v>=3?'var(--warn)':'var(--bad)'}">${v}</div>
+      </div>`:'';}).join('')}
+    </div>`:''}`;
+}
+
+/* ===========================================================
+   GESTÃO — updated renderGestao
+   =========================================================== */
+function renderGestao(){
+  renderManagerProfile();
+  renderMorningRoutine();
+  renderDailyList('problemsToday','problems-list','problems-badge');
+  renderDemandas2();
+  renderTrainings();
+  renderPrizePanel();
+  const wkey=getWeekKey();
+  const motiv=S.motivacionalHome[wkey]||{};
+  const ideaEl=document.getElementById('motiv-idea-gestao');
+  const resEl=document.getElementById('motiv-results-gestao');
+  if(ideaEl&&!ideaEl.value)ideaEl.value=motiv.idea||'';
+  if(resEl&&!resEl.value)resEl.value=motiv.results||'';
+  renderModelRequestsSplit();
+  renderScheduleRequests();
+  const sel=document.getElementById('sched-req-chatter');
+  if(sel&&!sel.options.length)sel.innerHTML=S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  renderChatAnalysisList();
+  renderOrientList();
+  renderMidnightList();
+}
+
+/* ===========================================================
+   EVOLUÇÃO — auto-summary of all people
+   =========================================================== */
+function renderEvolucao(){
+  const el=document.getElementById('evolucao-content');
+  if(!el)return;
+  const wkey=getWeekKey();
+  let html='';
+
+  // Manager section
+  const p=S.managerProfile||{};
+  const d=S.estudosDraft||{};
+  html+=`<div class="panel" style="border-left:3px solid var(--info)">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+      <div style="width:44px;height:44px;border-radius:50%;overflow:hidden;background:var(--bg-soft);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px">
+        ${p.photoUrl?`<img src="${p.photoUrl}" style="width:100%;height:100%;object-fit:cover">`:'👤'}
+      </div>
+      <div><div style="font-weight:800;font-size:15px">${p.name||'Gestor'}</div>
+      <div style="font-size:12px;color:var(--info)">${p.cargo||'Gestor de Chatters'}</div></div>
+    </div>
+    ${d.foco1||d.foco2||d.foco3?`<div style="margin-bottom:8px"><div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px">🎯 FOCO DESTA SEMANA</div>
+      ${[d.foco1,d.foco2,d.foco3].filter(Boolean).map(f=>`<div style="font-size:13px;padding:3px 0">• ${f}</div>`).join('')}
+    </div>`:''}
+    ${d.fracos1||d.fracos2||d.fracos3?`<div><div style="font-size:11px;font-weight:700;color:var(--warn);margin-bottom:4px">⚠️ DESENVOLVENDO</div>
+      ${[d.fracos1,d.fracos2,d.fracos3].filter(Boolean).map(f=>`<div style="font-size:13px;padding:3px 0">• ${f}</div>`).join('')}
+    </div>`:''}
+  </div>`;
+
+  // Team section
+  html+=`<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin:16px 0 8px">Equipe</div>`;
+
+  S.chatters.forEach(c=>{
+    const rev=getChatterWeekRevenueTotal(c.id);
+    const goals=S.chatterWeekGoals[wkey]||{};
+    const meta=parseFloat(goals[c.id])||0;
+    const pct=meta>0?Math.round((getChatterWeekRevenue(c.id)/meta)*100):null;
+    const f=S.chatterFichas[c.id]||{};
+    const analyses=[];
+    Object.values(S.chatAnalyses).forEach(arr=>(arr||[]).filter(a=>a.chatterId===c.id).forEach(a=>analyses.push(a)));
+    const avgScore=analyses.length?Math.round(CHAT_METRICS.reduce((s,m)=>s+analyses.reduce((ss,a)=>ss+(a[m]||0),0)/analyses.length,0)/CHAT_METRICS.length*10)/10:null;
+    const timeLabel=c.time==='elite'?'<span class="pill pill-warn" style="font-size:9px">⭐ Elite</span>':'<span class="pill pill-flat" style="font-size:9px">Básico</span>';
+    html+=`<div class="panel" style="margin-bottom:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="font-weight:700;font-size:14px">${c.name}</div>${timeLabel}
+          <span class="pill pill-flat" style="font-size:9px">${c.level}</span>
+        </div>
+        <div style="font-family:var(--font-mono);font-weight:800;font-size:14px;color:var(--ok)">${moneyShort(rev)}</div>
+      </div>
+      ${pct!==null?`<div style="background:var(--line);border-radius:4px;height:6px;overflow:hidden;margin-bottom:4px">
+        <div style="height:6px;border-radius:4px;background:${pct>=100?'var(--ok)':pct>=60?'var(--warn)':'var(--bad)'};width:${Math.min(100,pct)}%"></div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:8px">${pct}% da meta${pct<60?' · precisa de atenção':pct>=100?' · ✅ meta batida!':''}</div>`:''}
+      ${avgScore!==null?`<div style="font-size:12px;color:var(--text2)">Média análises: <strong style="color:${avgScore>=4?'var(--ok)':avgScore>=3?'var(--warn)':'var(--bad)'}">${avgScore}/5</strong></div>`:''}
+      ${f.tech&&Object.values(f.tech).some(Boolean)?`<div style="font-size:12px;color:var(--text2);margin-top:4px">Técnica: ${Object.entries(f.tech).filter(([,v])=>v).map(([k,v])=>`${k}: ${v.split(' ')[0]}`).join(' · ')}</div>`:''}
+    </div>`;
+  });
+
+  if(!S.chatters.length)html+='<div style="color:var(--text3);font-size:13px;padding:12px 0">Cadastre chatters na aba Equipe</div>';
+
+  el.innerHTML=html;
+}
+
