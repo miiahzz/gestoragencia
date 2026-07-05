@@ -800,7 +800,7 @@ function getSmartAlerts(){
   const daysLeft=getDaysRemainingInWeek();
 
   S.chatters.filter(c=>c.time!=='elite').forEach(c=>{
-    const target=parseFloat(goals[id])||0;
+    const id=c.id;
     const current=getChatterWeekRevenue(id);
 
     if(target>0){
@@ -3285,8 +3285,14 @@ function parseTeamReports(){
     } else if(current){
       const isModelLine=/^[A-ZÁÉÍÓÚÀÂÊÎÔÛÃÕ\s0-9]+$/.test(line)&&line.length>3&&!line.includes('R$')&&!/^\d/.test(line)&&line===line.toUpperCase();
       if(isModelLine){
-        current.currentModel={name:line,sales:[],saleTimes:[]};
-        current.modelBlocks.push(current.currentModel);
+        // If current model has NO sales/shift yet, it might be a continuation of the model name
+        // e.g. "ARRUDA" then "PRIVACY FREE" = one model "ARRUDA PRIVACY FREE"
+        if(current.currentModel&&!current.currentModel.sales.length&&!current.currentModel.shiftStart&&!current.currentModel.total){
+          current.currentModel.name+=' '+line;
+        } else {
+          current.currentModel={name:line,sales:[],saleTimes:[]};
+          current.modelBlocks.push(current.currentModel);
+        }
       } else if(/total de comiss/i.test(line)&&current.currentModel){
         const m=line.match(/R\$\s*([\d.,]+)/);
         if(m)current.currentModel.total=parseFloat(m[1].replace('.','').replace(',','.'));
@@ -3348,7 +3354,19 @@ function parseTeamReports(){
       mb.sales.forEach((v,i)=>allSales.push({val:v,time:mb.saleTimes[i]||null,isExtra}));
 
       const cleanName=mb.name.replace(/hora extra/gi,'').trim();
-      const model=S.models.find(m=>cleanName.toLowerCase().includes(m.name.toLowerCase())||m.name.toLowerCase().includes(cleanName.toLowerCase().split(' ')[0]));
+      // Try multiple matching strategies:
+      // 1. Exact contains match
+      // 2. Any word from report name matches model name
+      // 3. Model name words appear in report name
+      const words=cleanName.toLowerCase().split(/\s+/).filter(w=>w.length>2);
+      const model=S.models.find(m=>{
+        const mn=m.name.toLowerCase();
+        const mwords=mn.split(/\s+/).filter(w=>w.length>2);
+        return cleanName.toLowerCase().includes(mn)||
+          mn.includes(cleanName.toLowerCase())||
+          words.some(w=>mn.includes(w)||w.includes(mn))||
+          mwords.some(w=>cleanName.toLowerCase().includes(w));
+      });
 
       if(chatter&&model){
         if(isExtra){
