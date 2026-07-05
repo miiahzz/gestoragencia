@@ -16,7 +16,7 @@ function migrateState(s){
   if(!s.horaExtraSlots)s.horaExtraSlots={};
   if(!s.swaps)s.swaps=[];
   if(!s.morningRoutine)s.morningRoutine=[];
-  if(!s.problemsToday)s.problemsToday={};
+  if(!s.problemsToday||!Array.isArray(s.problemsToday))s.problemsToday=[];
   if(!s.demandas)s.demandas={};
   if(!s.trainings)s.trainings=[];
   if(!s.weekEvolutions)s.weekEvolutions={};
@@ -32,7 +32,7 @@ function migrateState(s){
   if(!s.chatAnalyses)s.chatAnalyses={};
   if(!s.semanaObjetivos)s.semanaObjetivos={};
   if(!s.modelRequestsSplit)s.modelRequestsSplit={};
-  if(!s.demandas2)s.demandas2={};
+  if(!s.demandas2||!Array.isArray(s.demandas2))s.demandas2=[];
   if(!s.justificativas)s.justificativas={};
   if(Array.isArray(s.shifts))s.shifts=s.shifts.map(sh=>({start2:'',end2:'',folgaDia:'',modelIds:[],...sh}));
   if(!s.chatterTrainings)s.chatterTrainings=[];
@@ -245,7 +245,7 @@ let S={
   horaExtraSlots:{},     // weekKey -> [{...}]
   swaps:[],              // [{id, date, covererId, originalId, ...}]
   morningRoutine:[],     // [{id, text, done}] — repeats daily
-  problemsToday:{},      // dateKey -> [{id, text, done}]
+  problemsToday:[],      // persistent list [{id, text, done}] — does NOT reset daily
   demandas:{},           // dateKey -> [{id, text, done}]
   trainings:[],          // [{id, title, date, days:[{day, script}]}]
   weekEvolutions:{},     // weekKey -> [{id, label, done, missed}]
@@ -261,7 +261,7 @@ let S={
   chatAnalyses:{},       // dateKey -> [{id, chatterId, ...scores, pontosFracos, pontosFortes}]
   semanaObjetivos:{},    // weekKey -> [{id, label, valor, done}]
   modelRequestsSplit:{}, // weekKey -> {modelId: text}
-  demandas2:{},          // dateKey -> [{id,text,date,done}]  (new demandas with date)
+  demandas2:[],          // persistent list [{id,text,date,done}] — does NOT reset daily
 };
 
 /* ===========================================================
@@ -1101,10 +1101,11 @@ function renderHome(){
   renderEscritorioPanel();
   renderUrgentPanel();
   renderSmartAlerts();
+  renderHomeMissingReports();
   renderJanelaPanel();
   renderMotivacionalHome();
   render48hAlerts();
-  renderMidnightPreviewHome(); // null-guarded
+  renderMidnightPreviewHome();
 }
 
 function renderEscritorioPanel(){
@@ -1115,8 +1116,24 @@ function renderEscritorioPanel(){
 
   const online=getCurrentOnline();
   const scheduledToday=getCurrentScheduledToday();
+
+  // Manual overrides saved in S.turnoLog[today] with status 'manual_online' or 'manual_offline'
+  if(!S.turnoLog[today])S.turnoLog[today]=[];
+  const manualOnline=S.turnoLog[today].filter(x=>x.status==='manual_online').map(x=>x.chatterId);
+  const manualOffline=S.turnoLog[today].filter(x=>x.status==='manual_offline').map(x=>x.chatterId);
+
+  // Full online list = auto detected + manual overrides
+  const allOnlineIds=new Set([...online.map(c=>c.id),...manualOnline].filter(id=>!manualOffline.includes(id)));
+  const allOnline=S.chatters.filter(c=>allOnlineIds.has(c.id));
+
+  // Not online but scheduled or manually available
+  const notOnline=S.chatters.filter(c=>
+    c.time!=='elite'&&
+    !allOnlineIds.has(c.id)
+  );
+
   const nextUp=scheduledToday
-    .filter(c=>!online.find(o=>o.id===c.id))
+    .filter(c=>!allOnlineIds.has(c.id))
     .map(c=>({c,next:getNextShiftToday(c.id),
       models:[...new Set(S.shifts.filter(s=>s.chatterId===c.id&&(s.days||[]).includes(todayDK)).flatMap(s=>s.modelIds||[]))].map(mid=>S.models.find(m=>m.id===mid)).filter(Boolean)
     }))
@@ -1129,20 +1146,34 @@ function renderEscritorioPanel(){
       <button class="btn btn-ghost btn-xs" onclick="navTo('turno')">escala →</button>
     </div>
 
-    ${online.length?
-      online.map(c=>{
+    ${allOnline.length?
+      allOnline.map(c=>{
         const shifts=S.shifts.filter(s=>s.chatterId===c.id&&(s.days||[]).includes(todayDK));
         const models=[...new Set(shifts.flatMap(s=>s.modelIds||[]))].map(mid=>S.models.find(m=>m.id===mid)).filter(Boolean);
         const ends=shifts.flatMap(s=>s.end2&&s.end2>s.end?[s.end2]:[s.end]).sort().reverse()[0]||'';
+        const isManual=manualOnline.includes(c.id);
         return`<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)">
-          <div style="width:9px;height:9px;border-radius:50%;background:var(--ok);animation:pulse 2s infinite;flex-shrink:0"></div>
+          <div style="width:9px;height:9px;border-radius:50%;background:${isManual?'var(--info)':'var(--ok)'};${isManual?'':'animation:pulse 2s infinite;'}flex-shrink:0"></div>
           <div style="flex:1">
-            <div style="font-weight:700;font-size:14px">${c.name}</div>
+            <div style="font-weight:700;font-size:14px">${c.name}${isManual?' <span style="font-size:10px;color:var(--info)">manual</span>':''}</div>
             <div style="font-size:11.5px;color:var(--text2)">${models.map(m=>`${m.emoji||''} ${m.name}`).join(' · ')||'online'}${ends?' · até '+ends:''}</div>
           </div>
+          <button onclick="toggleManualOnline('${c.id}',false)" style="background:none;border:1px solid var(--line);border-radius:6px;padding:3px 8px;cursor:pointer;font-size:11px;color:var(--text3)">saiu</button>
         </div>`;
       }).join('')
     :`<div style="font-size:13px;color:var(--text3);padding:8px 0">Ninguém online agora</div>`}
+
+    ${notOnline.length?`
+    <div style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
+      <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:8px">MARCAR COMO ONLINE</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${notOnline.map(c=>`
+          <button onclick="toggleManualOnline('${c.id}',true)"
+            style="background:var(--bg-soft);border:1.5px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer;font-family:var(--font-display);font-size:12.5px;font-weight:700;color:var(--text)">
+            + ${c.name}
+          </button>`).join('')}
+      </div>
+    </div>`:''}
 
     <button onclick="toggleNextTurno()" style="width:100%;margin-top:12px;background:var(--bg-soft);border:1.5px solid var(--line);border-radius:9px;padding:10px 14px;cursor:pointer;font-family:var(--font-display);font-size:13px;font-weight:700;color:var(--text);display:flex;align-items:center;justify-content:space-between">
       <span>⏳ PRÓXIMO TURNO</span>
@@ -1158,6 +1189,22 @@ function renderEscritorioPanel(){
       :`<div style="font-size:12.5px;color:var(--text3);padding:10px 0">Nenhum próximo turno agendado</div>`}
     </div>
   `;
+}
+
+function toggleManualOnline(chatterId, goOnline){
+  const today=todayKey();
+  if(!S.turnoLog[today])S.turnoLog[today]=[];
+  // Remove any existing entry for this chatter today
+  S.turnoLog[today]=S.turnoLog[today].filter(x=>x.chatterId!==chatterId||x.status==='in'||x.status==='out');
+  if(goOnline){
+    S.turnoLog[today].push({chatterId,status:'manual_online',time:new Date().toTimeString().slice(0,5)});
+    toast(`✅ ${S.chatters.find(c=>c.id===chatterId)?.name} marcado online`);
+  } else {
+    S.turnoLog[today].push({chatterId,status:'manual_offline',time:new Date().toTimeString().slice(0,5)});
+    toast(`${S.chatters.find(c=>c.id===chatterId)?.name} saiu`);
+  }
+  save();
+  renderEscritorioPanel();
 }
 
 
@@ -1309,7 +1356,6 @@ function toggleNextTurno(){
 }
 
 function renderTurno(){
-  renderTurnoQuickEditor();
   renderTurnoDay();
   renderTurnoWeek();
   renderAbsenceListWithJustificativa();
@@ -1504,11 +1550,21 @@ function renderTurnoWeek(){
       const name=c?c.name:'—';
       const t1=`${s.start}–${s.end}`;
       const t2=s.start2&&s.end2?`${s.start2}–${s.end2}`:'';
+      const days=(s.days||[]).map(d=>({seg:'Seg',ter:'Ter',qua:'Qua',qui:'Qui',sex:'Sex',sab:'Sáb',dom:'Dom'}[d]||d)).join(' ');
       const folgaLabel=s.folgaDia?` <span style="font-size:10px;color:var(--bad)">(folga ${s.folgaDia})</span>`:'';
+      if(turnoEditMode){
+        return`<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-soft);border-radius:8px;margin-bottom:5px">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:13.5px">${name}${folgaLabel}</div>
+            <div style="font-size:11.5px;color:var(--text2);margin-top:1px"><span style="font-family:var(--font-mono);color:var(--warn)">${t1}${t2?' · '+t2:''}</span>${days?' · '+days:''}</div>
+          </div>
+          <button onclick="openEditShiftFromProfile('${s.id}','${s.chatterId}')" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px">✏️</button>
+          <button onclick="deleteShift('${s.id}')" style="background:none;border:none;color:var(--bad);cursor:pointer;font-size:15px;padding:0 4px">✕</button>
+        </div>`;
+      }
       return`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)">
-        <div onclick="openEditShiftFromProfile('${s.id}','${s.chatterId}')" style="font-family:var(--font-mono);font-size:12.5px;color:var(--warn);min-width:110px;flex-shrink:0;cursor:pointer">${t1}${t2?' · '+t2:''}</div>
-        <div onclick="openEditShiftFromProfile('${s.id}','${s.chatterId}')" style="font-size:13.5px;font-weight:700;flex:1;cursor:pointer">${name}${folgaLabel}</div>
-        <button onclick="deleteShift('${s.id}')" style="background:none;border:none;color:var(--bad);cursor:pointer;font-size:15px;padding:2px 6px">✕</button>
+        <div style="font-family:var(--font-mono);font-size:12.5px;color:var(--warn);min-width:110px;flex-shrink:0">${t1}${t2?' · '+t2:''}</div>
+        <div style="font-size:13.5px;font-weight:700;flex:1">${name}${folgaLabel}</div>
       </div>`;
     }).join('');
 
@@ -2745,15 +2801,7 @@ function renderRevenueTable(){
   html+=`<td style="text-align:right;font-family:var(--font-mono);font-weight:800;color:var(--ok)">${dayTotal>0?money(dayTotal):'—'}</td>`;
   html+='</tr></tbody></table></div>';
 
-  // Substitute report button — appears when data exists for this date
-  if(hasReportData){
-    html+=`<div style="margin-top:10px">
-      <button class="btn btn-ghost btn-sm btn-block" onclick="openSubstituteReport('${dateKey}')"
-        style="border-color:var(--warn);color:var(--warn)">
-        🔄 Substituir relatório de ${dateKey}
-      </button>
-    </div>`;
-  }
+  // No substitute button needed — re-processing a report auto-replaces the data
 
   el.innerHTML=html;
 }
@@ -3625,8 +3673,7 @@ function removeMorningRoutineItem(id){
 function renderDailyList(storeKey,listId,badgeId){
   const el=document.getElementById(listId);
   if(!el)return;
-  const today=todayKey();
-  const items=S[storeKey][today]||[];
+  const items=Array.isArray(S[storeKey])?S[storeKey]:(S[storeKey][todayKey()]||[]);
   const badge=document.getElementById(badgeId);
   const pending=items.filter(x=>!x.done).length;
   if(badge)badge.textContent=pending>0?`${pending} pendente${pending>1?'s':''}` :'';
@@ -3639,23 +3686,21 @@ function renderDailyList(storeKey,listId,badgeId){
     </div>`).join('');
 }
 function toggleDailyItem(store,id){
-  const today=todayKey();
-  const items=S[store][today]||[];
+  let items=Array.isArray(S[store])?S[store]:(S[store][todayKey()]||[]);
   const item=items.find(x=>x.id===id);
   if(item)item.done=!item.done;
   save();renderGestao();
 }
 function removeDailyItem(store,id){
-  const today=todayKey();
-  S[store][today]=(S[store][today]||[]).filter(x=>x.id!==id);
+  if(Array.isArray(S[store])){S[store]=S[store].filter(x=>x.id!==id);}
+  else{const t=todayKey();S[store][t]=(S[store][t]||[]).filter(x=>x.id!==id);}
   save();renderGestao();
 }
 function addProblem(){
   const inp=document.getElementById('problems-input');
   const text=inp?.value.trim();if(!text)return;
-  const today=todayKey();
-  if(!S.problemsToday[today])S.problemsToday[today]=[];
-  S.problemsToday[today].push({id:'p'+Date.now(),text,done:false});
+  if(!Array.isArray(S.problemsToday))S.problemsToday=[];
+  S.problemsToday.push({id:'p'+Date.now(),text,done:false});
   inp.value='';save();renderGestao();
 }
 function addDemanda(){
@@ -4307,8 +4352,7 @@ function saveManagerProfile(){
 function renderDemandas2(){
   const el=document.getElementById('demandas2-list');
   if(!el)return;
-  const today=todayKey();
-  const items=S.demandas2[today]||[];
+  const items=Array.isArray(S.demandas2)?S.demandas2:[];
   if(!items.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Nenhuma demanda</div>';return;}
   el.innerHTML=items.map(item=>{
     const overdue=item.date&&item.date<today;
@@ -4322,8 +4366,6 @@ function renderDemandas2(){
       <button onclick="removeDemanda2('${item.id}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px">✕</button>
     </div>`;
   }).join('');
-  const dateEl=document.getElementById('demandas2-date');
-  if(dateEl&&!dateEl.value)dateEl.value=today;
 }
 function isWithin48h(dateStr){
   const d=new Date(dateStr+'T23:59:00');
@@ -4334,20 +4376,17 @@ function addDemanda2(){
   const text=document.getElementById('demandas2-text')?.value.trim();
   const date=document.getElementById('demandas2-date')?.value||'';
   if(!text)return;
-  const today=todayKey();
-  if(!S.demandas2[today])S.demandas2[today]=[];
-  S.demandas2[today].push({id:'d2'+Date.now(),text,date,done:false});
-  document.getElementById('demandas2-text').value='';
+  if(!Array.isArray(S.demandas2))S.demandas2=[];
+  S.demandas2.push({id:'d2'+Date.now(),text,date,done:false});
+  const el=document.getElementById('demandas2-text');if(el)el.value='';
   save();renderDemandas2();
 }
 function toggleDemanda2(id){
-  const today=todayKey();
-  const item=(S.demandas2[today]||[]).find(x=>x.id===id);
+  const item=(S.demandas2||[]).find(x=>x.id===id);
   if(item){item.done=!item.done;save();renderDemandas2();}
 }
 function removeDemanda2(id){
-  const today=todayKey();
-  S.demandas2[today]=(S.demandas2[today]||[]).filter(x=>x.id!==id);
+  if(Array.isArray(S.demandas2))S.demandas2=S.demandas2.filter(x=>x.id!==id);
   save();renderDemandas2();
 }
 
@@ -4413,14 +4452,12 @@ function render48hAlerts(){
   const today=todayKey();
   const urgent=[];
   // Check all demandas2 across days
-  Object.entries(S.demandas2||{}).forEach(([day,items])=>{
-    (items||[]).forEach(item=>{
-      if(!item.done&&item.date&&!urgent.find(x=>x.id===item.id)){
-        const overdue=item.date<today;
-        const near=!overdue&&isWithin48h(item.date);
-        if(overdue||near)urgent.push({...item,overdue});
-      }
-    });
+  (Array.isArray(S.demandas2)?S.demandas2:[]).forEach(item=>{
+    if(!item.done&&item.date&&!urgent.find(x=>x.id===item.id)){
+      const overdue=item.date<today;
+      const near=!overdue&&isWithin48h(item.date);
+      if(overdue||near)urgent.push({...item,overdue});
+    }
   });
   // Check trainings
   S.trainings.forEach(t=>{
@@ -4468,8 +4505,13 @@ const CHAT_METRICS=['conexao','conducao','engajamento','conversao','resposta','n
 const CHAT_METRIC_LABELS={conexao:'Conexão',conducao:'Condução',engajamento:'Engajamento',conversao:'Conversão',resposta:'Resposta',naturalidade:'Naturalidade'};
 
 function openChatAnalysis(){
+  if(!S.chatters.length){toast('⚠️ Cadastre chatters primeiro');return;}
   const sel=document.getElementById('ca-chatter');
-  if(sel)sel.innerHTML=S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  if(sel){
+    sel.innerHTML='<option value="">— selecionar chatter —</option>'+
+      S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+    sel.value='';
+  }
   CHAT_METRICS.forEach(m=>{const el=document.getElementById('ca-'+m);if(el)el.value='';});
   const f=document.getElementById('ca-fortes');const fr=document.getElementById('ca-fracos');
   if(f)f.value='';if(fr)fr.value='';
@@ -4477,17 +4519,32 @@ function openChatAnalysis(){
 }
 function saveChatAnalysis(){
   const chatterId=document.getElementById('ca-chatter')?.value;
-  if(!chatterId){toast('Selecione um chatter');return;}
-  const analysis={id:'ca'+Date.now(),chatterId,date:todayKey(),fortes:document.getElementById('ca-fortes')?.value||'',fracos:document.getElementById('ca-fracos')?.value||''};
-  CHAT_METRICS.forEach(m=>{analysis[m]=parseInt(document.getElementById('ca-'+m)?.value)||0;});
+  if(!chatterId){toast('⚠️ Selecione um chatter primeiro');return;}
+  const analysis={id:'ca'+Date.now(),chatterId,date:todayKey(),
+    fortes:document.getElementById('ca-fortes')?.value||'',
+    fracos:document.getElementById('ca-fracos')?.value||''};
+  let hasScore=false;
+  CHAT_METRICS.forEach(m=>{
+    const v=parseInt(document.getElementById('ca-'+m)?.value)||0;
+    analysis[m]=v;if(v>0)hasScore=true;
+  });
+  if(!hasScore&&!analysis.fortes&&!analysis.fracos){toast('⚠️ Preencha pelo menos um campo');return;}
+  if(!S.chatAnalyses)S.chatAnalyses={};
   const today=todayKey();
   if(!S.chatAnalyses[today])S.chatAnalyses[today]=[];
   S.chatAnalyses[today].push(analysis);
-  // Auto-update chatter ficha with average scores
   updateFichaFromAnalysis(chatterId);
-  save();closeModal('m-chat-analysis');renderChatAnalysisList();
+  save();
+  closeModal('m-chat-analysis');
+  const selEl=document.getElementById('chat-analysis-chatter');
+  if(selEl){
+    selEl.innerHTML='<option value="">— selecionar chatter —</option>'+S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+    selEl.value=chatterId;
+  }
+  renderChatAnalysisList();
   toast('✅ Análise salva!');
 }
+
 function updateFichaFromAnalysis(chatterId){
   if(!S.chatterFichas[chatterId])S.chatterFichas[chatterId]={tech:{},behavior:{},potential:{},risk:{},history:[]};
   const f=S.chatterFichas[chatterId];
@@ -4770,76 +4827,126 @@ function renderEvolucao(){
   const el=document.getElementById('evolucao-content');
   if(!el)return;
   const wkey=getWeekKey();
+  const wd=getWeekDates();
   let html='';
 
-  const p=S.managerProfile||{};
-  html+=`<div class="panel" style="border-left:3px solid var(--info);margin-bottom:16px">
-    <div style="display:flex;align-items:center;gap:12px">
-      <div style="width:44px;height:44px;border-radius:50%;overflow:hidden;background:var(--bg-soft);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px">
-        ${p.photoUrl?`<img src="${p.photoUrl}" style="width:100%;height:100%;object-fit:cover">`:'👤'}
-      </div>
-      <div><div style="font-weight:800;font-size:15px">${p.name||'Gestor'}</div>
-      <div style="font-size:12px;color:var(--info)">${p.cargo||'Gestor de Chatters'}</div></div>
-    </div>
-  </div>`;
+  if(!S.chatters.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:12px 0">Cadastre chatters na aba Equipe</div>';
+    return;
+  }
 
-  html+=`<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Evolução da equipe</div>`;
+  html+=`<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">Relatório individual por chatter</div>`;
 
-  if(!S.chatters.length){el.innerHTML=html+'<div style="color:var(--text3);font-size:13px">Cadastre chatters na aba Equipe</div>';return;}
-
-  const metricLabels={ticketMedio:'Ticket médio',vendasPorHora:'Valor/hora',highTicketPct:'% High ticket'};
+  const goals=S.chatterWeekGoals[wkey]||{};
+  let teamTotal=0, teamDays=0, teamTicketSum=0, teamVphSum=0, teamHighSum=0;
 
   S.chatters.forEach(c=>{
     const rev=getChatterWeekRevenueTotal(c.id);
-    const goals=S.chatterWeekGoals[wkey]||{};
     const meta=parseFloat(goals[c.id])||0;
     const pct=meta>0?Math.round((getChatterWeekRevenue(c.id)/meta)*100):null;
     const f=S.chatterFichas[c.id]||{};
     const analytics=f?.analytics?.weeklyData||{};
-    const wd=getWeekDates();
-    let ticketSum=0,vphSum=0,highSum=0,days=0,maxGap=0;
-    wd.forEach(d=>{const a=analytics[fmt(d)];if(a&&a.ticketMedio>0){ticketSum+=a.ticketMedio;vphSum+=a.vendasPorHora||0;highSum+=a.highTicketPct||0;days++;if((a.maxGapMin||0)>maxGap)maxGap=a.maxGapMin||0;}});
-    const avgTicket=days>0?ticketSum/days:0;
-    const avgVPH=days>0?Math.round(vphSum/days*100)/100:0;
-    const avgHigh=days>0?Math.round(highSum/days):0;
+    const wkeys=wd.map(d=>fmt(d)).filter(dk=>analytics[dk]);
 
-    const evoPct=calcEvolutionPct(c.id);
+    // Aggregate analytics
+    let ticketSum=0,vphSum=0,highSum=0,maxGap=0,days=0,totalV=0,extraV=0;
+    wkeys.forEach(dk=>{
+      const a=analytics[dk];
+      totalV+=a.chatterTotal||0; extraV+=a.extraTotal||0;
+      if(a.ticketMedio>0){ticketSum+=a.ticketMedio;vphSum+=a.vendasPorHora||0;highSum+=a.highTicketPct||0;days++;}
+      if((a.maxGapMin||0)>maxGap)maxGap=a.maxGapMin||0;
+    });
+    const avgTicket=days>0?ticketSum/days:0;
+    const avgVph=days>0?Math.round(vphSum/days*100)/100:0;
+    const avgHigh=days>0?Math.round(highSum/days):0;
+    teamTotal+=rev; if(days>0){teamDays++;teamTicketSum+=avgTicket;teamVphSum+=avgVph;teamHighSum+=avgHigh;}
+
+    // Chat analyses
+    const analyses=[];
+    Object.values(S.chatAnalyses||{}).forEach(arr=>(arr||[]).filter(a=>a.chatterId===c.id).forEach(a=>analyses.push(a)));
+    const avgScore=analyses.length?Math.round(CHAT_METRICS.reduce((s,m)=>s+analyses.reduce((ss,a)=>ss+(a[m]||0),0)/analyses.length,0)/CHAT_METRICS.length*10)/10:null;
+
+    // Evolution %
+    const entries=Object.entries(analytics).sort((a,b)=>a[0].localeCompare(b[0]));
+    const evoTicket=entries.length>=2&&entries[0][1].ticketMedio>0?Math.round(((entries[entries.length-1][1].ticketMedio-entries[0][1].ticketMedio)/entries[0][1].ticketMedio)*100):null;
+    const evoVph=entries.length>=2&&entries[0][1].vendasPorHora>0?Math.round(((entries[entries.length-1][1].vendasPorHora-entries[0][1].vendasPorHora)/entries[0][1].vendasPorHora)*100):null;
+
+    // Generate recommendations based on data
+    const recs=[];
+    if(avgHigh<20)recs.push('Trabalhar abordagem de high ticket — % abaixo do ideal');
+    if(avgVph<10)recs.push('Aumentar valor/hora — pode indicar poucos atendimentos ou ticket baixo');
+    if(maxGap>90)recs.push(`Gap máximo de ${maxGap}min sem vender — verificar consistência`);
+    if(avgScore!==null&&avgScore<3)recs.push('Scores de análise do chat abaixo da média — focar em treinamento');
+    if(pct!==null&&pct<50)recs.push(`Apenas ${pct}% da meta — avaliar volume de atendimento`);
+    if(!recs.length&&rev>0)recs.push('Bom desempenho — manter consistência');
+
     const timeLabel=c.time==='elite'?'<span class="pill pill-warn" style="font-size:9px">⭐ Elite</span>':'';
 
-    html+=`<div class="panel" style="margin-bottom:8px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+    html+=`<div class="panel" style="margin-bottom:10px;border-left:3px solid ${pct===null?'var(--line)':pct>=80?'var(--ok)':pct>=50?'var(--warn)':'var(--bad)'}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:6px">
-          <div style="font-weight:700;font-size:14px">${c.name}</div>${timeLabel}
+          <div style="font-weight:800;font-size:15px">${c.name}</div>${timeLabel}
           <span class="pill pill-flat" style="font-size:9px">${c.level}</span>
         </div>
-        <div style="font-family:var(--font-mono);font-weight:800;font-size:14px;color:var(--ok)">${moneyShort(rev)}</div>
+        <div style="text-align:right">
+          <div style="font-family:var(--font-mono);font-weight:800;font-size:15px;color:var(--ok)">${money(rev)}</div>
+          ${meta>0?`<div style="font-size:11px;color:var(--text3)">${pct}% da meta</div>`:''}
+        </div>
       </div>
-      ${meta>0?`<div style="background:var(--line);border-radius:4px;height:6px;overflow:hidden;margin-bottom:6px">
-        <div style="height:6px;border-radius:4px;background:${pct>=100?'var(--ok)':pct>=60?'var(--warn)':'var(--bad)'};width:${Math.min(100,pct||0)}%"></div>
-      </div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:8px">${pct}% da meta</div>`:''}
-      ${days>0?`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:8px">
-        <div style="background:var(--bg-soft);border-radius:7px;padding:6px;text-align:center">
+      ${meta>0?`<div style="background:var(--line);border-radius:4px;height:5px;overflow:hidden;margin-bottom:10px">
+        <div style="height:5px;border-radius:4px;background:${pct>=100?'var(--ok)':pct>=60?'var(--warn)':'var(--bad)'};width:${Math.min(100,pct||0)}%"></div>
+      </div>`:''}
+      ${days>0?`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px">
+        <div style="background:var(--bg-soft);border-radius:7px;padding:7px;text-align:center">
           <div style="font-size:9px;color:var(--text3)">Ticket médio</div>
           <div style="font-size:13px;font-weight:700;font-family:var(--font-mono)">${money(avgTicket)}</div>
-          ${evoPct?.ticketMedio!==undefined?`<div style="font-size:10px;color:${evoPct.ticketMedio>=0?'var(--ok)':'var(--bad)'}">${evoPct.ticketMedio>=0?'▲':'▼'}${Math.abs(evoPct.ticketMedio)}%</div>`:''}
+          ${evoTicket!==null?`<div style="font-size:10px;color:${evoTicket>=0?'var(--ok)':'var(--bad)'}">${evoTicket>=0?'▲':'▼'}${Math.abs(evoTicket)}%</div>`:''}
         </div>
-        <div style="background:var(--bg-soft);border-radius:7px;padding:6px;text-align:center">
+        <div style="background:var(--bg-soft);border-radius:7px;padding:7px;text-align:center">
           <div style="font-size:9px;color:var(--text3)">Valor/hora</div>
-          <div style="font-size:13px;font-weight:700;color:${avgVPH>=20?'var(--ok)':avgVPH>=10?'var(--warn)':'var(--bad)'}">${avgVPH}</div>
-          ${evoPct?.vendasPorHora!==undefined?`<div style="font-size:10px;color:${evoPct.vendasPorHora>=0?'var(--ok)':'var(--bad)'}">${evoPct.vendasPorHora>=0?'▲':'▼'}${Math.abs(evoPct.vendasPorHora)}%</div>`:''}
+          <div style="font-size:13px;font-weight:700;color:${avgVph>=20?'var(--ok)':avgVph>=10?'var(--warn)':'var(--bad)'}">${money(avgVph)}/h</div>
+          ${evoVph!==null?`<div style="font-size:10px;color:${evoVph>=0?'var(--ok)':'var(--bad)'}">${evoVph>=0?'▲':'▼'}${Math.abs(evoVph)}%</div>`:''}
         </div>
-        <div style="background:var(--bg-soft);border-radius:7px;padding:6px;text-align:center">
+        <div style="background:var(--bg-soft);border-radius:7px;padding:7px;text-align:center">
           <div style="font-size:9px;color:var(--text3)">High ticket</div>
           <div style="font-size:13px;font-weight:700;color:${avgHigh>=30?'var(--ok)':avgHigh>=15?'var(--warn)':'var(--bad)'}">${avgHigh}%</div>
-          ${evoPct?.highTicketPct!==undefined?`<div style="font-size:10px;color:${evoPct.highTicketPct>=0?'var(--ok)':'var(--bad)'}">${evoPct.highTicketPct>=0?'▲':'▼'}${Math.abs(evoPct.highTicketPct)}%</div>`:''}
         </div>
-      </div>`:'<div style="font-size:12px;color:var(--text3);margin-bottom:6px">Processe relatórios para ver métricas</div>'}
-      ${evoPct&&Object.keys(evoPct).length?`<div style="font-size:11px;color:var(--text2)">Evolução vs primeiro registro: ${Object.entries(evoPct).map(([k,v])=>`${metricLabels[k]}: <strong style="color:${v>=0?'var(--ok)':'var(--bad)'}">${v>=0?'+':''}${v}%</strong>`).join(' · ')}</div>`:''}
+      </div>`:'<div style="font-size:12px;color:var(--text3);margin-bottom:8px">Processe relatórios para ver métricas</div>'}
+      ${avgScore!==null?`<div style="font-size:12px;color:var(--text2);margin-bottom:8px">Análise do chat: <strong style="color:${avgScore>=4?'var(--ok)':avgScore>=3?'var(--warn)':'var(--bad)'}">${avgScore}/5</strong> (${analyses.length} análise${analyses.length>1?'s':''})</div>`:''}
+      <div style="background:var(--bg-soft);border-radius:8px;padding:10px">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">💡 ONDE MELHORAR</div>
+        ${recs.map(r=>`<div style="font-size:12.5px;color:var(--text);padding:3px 0;border-bottom:1px solid var(--line)">• ${r}</div>`).join('')}
+      </div>
     </div>`;
   });
 
+  // Team summary report
+  const avgTeamTicket=teamDays>0?teamTicketSum/teamDays:0;
+  const avgTeamVph=teamDays>0?Math.round(teamVphSum/teamDays*100)/100:0;
+  const avgTeamHigh=teamDays>0?Math.round(teamHighSum/teamDays):0;
+
+  const p=S.managerProfile||{};
+  const estudos=S.estudosDraft||{};
+
+  html+=`<div class="panel" style="border:2px solid var(--accent);margin-top:8px">
+    <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">📈 Relatório semanal da equipe — ${wkey}</div>
+    <div class="reprow"><div class="replb">Total equipe</div><div class="repval" style="font-weight:800">${money(teamTotal)}</div></div>
+    ${avgTeamTicket>0?`<div class="reprow"><div class="replb">Ticket médio geral</div><div class="repval">${money(avgTeamTicket)}</div></div>`:''}
+    ${avgTeamVph>0?`<div class="reprow"><div class="replb">Valor/hora médio</div><div class="repval">${money(avgTeamVph)}/h</div></div>`:''}
+    ${avgTeamHigh>0?`<div class="reprow"><div class="replb">High ticket médio</div><div class="repval">${avgTeamHigh}%</div></div>`:''}
+    <div style="margin-top:12px;font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">GESTÃO — ${p.name||'Gestor'} · ${p.cargo||''}</div>
+    ${estudos.foco1||estudos.foco2||estudos.foco3?`<div style="font-size:12.5px;color:var(--text2)"><strong>Focos:</strong> ${[estudos.foco1,estudos.foco2,estudos.foco3].filter(Boolean).join(' · ')}</div>`:''}
+    <button class="btn btn-ghost btn-sm btn-block" style="margin-top:10px" onclick="copiarRelatorioEvolucao()">📋 Copiar relatório</button>
+  </div>`;
+
   el.innerHTML=html;
+}
+
+function copiarRelatorioEvolucao(){
+  const el=document.getElementById('evolucao-content');
+  if(!el)return;
+  const text=el.innerText||el.textContent||'';
+  navigator.clipboard?.writeText(text).then(()=>toast('📋 Relatório copiado!'));
 }
 
 function deleteShift(shiftId){
@@ -4965,33 +5072,58 @@ function renderChatterAnalysis(){
    GESTÃO — updated renderGestao
    =========================================================== */
 function renderGestaoMissingReports(){
-  const el=document.getElementById('gestao-missing-reports');
+  // Redirect to home panel
+  renderHomeMissingReports();
+}
+
+function renderHomeMissingReports(){
+  const el=document.getElementById('home-missing-reports');
   if(!el)return;
+  if(!S.models.length||!S.chatters.length){el.innerHTML='';return;}
   const wd=getWeekDates();
   const missing=[];
   wd.forEach(d=>{
     const dk=fmt(d);
-    if(dk>todayKey())return; // future days skip
+    if(dk>todayKey())return;
     S.chatters.filter(c=>c.time!=='elite').forEach(c=>{
       const hasRev=S.models.some(m=>(parseFloat(S.revenues[`${c.id}_${m.id}_${dk}`])||0)>0);
-      if(!hasRev)missing.push({name:c.name,id:c.id,date:dk});
+      const justKey='just_'+c.id+'_'+dk;
+      const hasJust=S.justificativas&&S.justificativas[justKey];
+      if(!hasRev&&!hasJust)missing.push({name:c.name,id:c.id,date:dk});
     });
   });
-  if(!missing.length){el.innerHTML='<div style="color:var(--ok);font-size:13px">✅ Todos os relatórios recebidos esta semana</div>';return;}
-  // Group by chatter
+  if(!missing.length){el.innerHTML='';return;}
   const byChatter={};
-  missing.forEach(x=>{if(!byChatter[x.id])byChatter[x.id]={name:x.name,dates:[]};byChatter[x.id].dates.push(x.date);});
-  el.innerHTML=Object.values(byChatter).map(x=>`
-    <div style="padding:8px 0;border-bottom:1px solid var(--line)">
-      <div style="font-weight:600;font-size:13px;margin-bottom:4px">${x.name}</div>
-      <div style="font-size:11.5px;color:var(--bad)">Sem relatório: ${x.dates.join(', ')}</div>
-      <textarea class="ftext" placeholder="Justificativa (falta, folga, etc.)..." style="min-height:40px;font-size:12px;margin-top:6px" onblur="saveJustificativa('${x.id}',this.value)"></textarea>
-    </div>`).join('');
+  missing.forEach(x=>{
+    if(!byChatter[x.id])byChatter[x.id]={name:x.name,dates:[]};
+    byChatter[x.id].dates.push(x.date);
+  });
+  el.innerHTML=`<div class="panel" style="border-color:var(--bad)">
+    <div class="panel-head"><div class="panel-title" style="color:var(--bad)">📋 Relatórios faltando</div></div>
+    ${Object.values(byChatter).map(x=>`
+      <div style="padding:8px 0;border-bottom:1px solid var(--line)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <div style="font-weight:700;font-size:13px;color:var(--bad)">⚠️ ${x.name}</div>
+          <div style="font-size:11px;color:var(--text3)">${x.dates.map(d=>d.slice(5)).join(', ')}</div>
+        </div>
+        <input class="finput" style="font-size:11.5px;padding:5px 9px" placeholder="Justificativa (falta, folga acordada...)"
+          value="${(S.justificativas&&S.justificativas['just_'+x.id+'_'+x.dates[0]])||''}"
+          onblur="saveJustificativa2('${x.id}',this.value,'${x.dates.join(',')}')">
+      </div>`).join('')}
+  </div>`;
 }
 function saveJustificativa(chatterId,text){
   if(!S.justificativas)S.justificativas={};
   S.justificativas[todayKey()+'_'+chatterId]=text;
   save();
+}
+function saveJustificativa2(chatterId,text,datesStr){
+  if(!S.justificativas)S.justificativas={};
+  (datesStr||'').split(',').forEach(dk=>{
+    S.justificativas['just_'+chatterId+'_'+dk.trim()]=text;
+  });
+  save();
+  renderHomeMissingReports();
 }
 
 function renderGestao(){
@@ -5020,4 +5152,52 @@ function renderGestao(){
    EVOLUÇÃO — auto-summary of all people
    =========================================================== */
 
+
+
+/* ===========================================================
+   TURNO — copy and edit mode
+   =========================================================== */
+function copyTurnoDay(){
+  const el=document.getElementById('turno-day-list');
+  if(!el)return;
+  const text=el.innerText||el.textContent||'';
+  navigator.clipboard?.writeText(text).then(()=>toast('📋 Escala do dia copiada!'));
+}
+
+function copyTurnoWeek(){
+  const el=document.getElementById('turno-week-list');
+  if(!el)return;
+  // Build readable text from the week schedule
+  const DAY_LABEL={seg:'Seg',ter:'Ter',qua:'Qua',qui:'Qui',sex:'Sex',sab:'Sáb',dom:'Dom'};
+  const wd=getWeekDates();
+  let lines=['📅 ESCALA DA SEMANA',''];
+  S.models.forEach(m=>{
+    const modelShifts=S.shifts.filter(s=>(s.modelIds||[]).includes(m.id)&&s.chatterId);
+    if(!modelShifts.length)return;
+    lines.push(`${m.emoji||'🧩'} ${m.name}`);
+    const sorted=[...modelShifts].sort((a,b)=>{
+      const toM=t=>{if(!t)return 9999;const[h,mn]=t.split(':').map(Number);return h<7?h*60+mn+1440:h*60+mn;};
+      return toM(a.start)-toM(b.start);
+    });
+    sorted.forEach(s=>{
+      const c=S.chatters.find(ch=>ch.id===s.chatterId);
+      if(!c||c.time==='elite')return;
+      const days=(s.days||[]).map(d=>DAY_LABEL[d]).join('/');
+      const t2=s.start2&&s.end2?` + ${s.start2}–${s.end2}`:'';
+      lines.push(`  ${c.name}: ${s.start}–${s.end}${t2} (${days})`);
+    });
+    lines.push('');
+  });
+  const text=lines.join('\n');
+  navigator.clipboard?.writeText(text).then(()=>toast('📋 Escala da semana copiada!'));
+}
+
+let turnoEditMode=false;
+function toggleTurnoEditMode(){
+  turnoEditMode=!turnoEditMode;
+  renderTurnoWeek();
+  const btn=document.querySelector('[onclick="toggleTurnoEditMode()"]');
+  if(btn)btn.textContent=turnoEditMode?'✅ Concluir edição':'✏️ Editar escala completa';
+  if(turnoEditMode)toast('Modo edição ativo — clique nos turnos para editar ou ✕ para remover');
+}
 
