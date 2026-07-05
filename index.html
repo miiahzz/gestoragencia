@@ -7,6 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#FFFFFF">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <title>GestorPro</title>
 <style>
 /* ============================================================
@@ -379,6 +380,8 @@ body{
     <button class="toptab" data-go="semana">Semana</button>
     <button class="toptab" data-go="estudos">Estudos</button>
     <button class="toptab" data-go="evolucao">Evolução</button>
+    <button class="toptab" data-go="chatlab">ChatLab</button>
+    <button class="toptab" data-go="gerador">Gerador</button>
   </nav>
 </header>
 
@@ -493,6 +496,15 @@ body{
 <section class="view" id="v-semana">
   <div class="eyebrow">planejamento</div>
   <div class="view-title">Semana <span id="semana-range" style="color:var(--text3);font-weight:400;font-size:15px"></span></div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">🎯 Orientações da semana</div><div class="panel-note">Concluídas somem só na próxima semana</div></div>
+      <button class="btn btn-primary btn-xs" onclick="addWeekOrient()">+ orientação</button>
+    </div>
+    <div class="field" style="margin-bottom:8px"><input class="finput" id="week-orient-input" placeholder="Nova orientação..." onkeydown="if(event.key==='Enter')addWeekOrient()"></div>
+    <div id="week-orients-list"></div>
+  </div>
 
   <div class="panel">
     <div class="panel-head">
@@ -909,6 +921,81 @@ body{
   <div class="view-title">Evolução</div>
   <div class="view-sub">Resumo automático de toda a equipe + você</div>
   <div id="evolucao-content"></div>
+</section>
+
+
+<!-- ===================== CHATLAB ===================== -->
+<section class="view" id="v-chatlab">
+  <div class="eyebrow">análise com IA</div>
+  <div class="view-title">ChatLab</div>
+  <div class="view-sub">Cole a conversa — a IA gera o diagnóstico completo do chatter</div>
+
+  <div class="panel">
+    <div class="field">
+      <label class="flabel">Chatter</label>
+      <select class="fselect" id="cl-chatter"><option value="">— selecionar —</option></select>
+    </div>
+    <div class="field">
+      <label class="flabel">Conversa completa</label>
+      <textarea class="ftext" id="cl-conversa" style="min-height:180px" placeholder="Cole aqui a conversa entre o chatter e o cliente..."></textarea>
+    </div>
+    <div class="field">
+      <label class="flabel">Contexto (opcional)</label>
+      <input class="finput" id="cl-ctx" placeholder="Ex: cliente recorrente, primeira compra...">
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" id="cl-btn" onclick="rodarChatLab()">⚡ Analisar</button>
+      <button class="btn btn-ghost" onclick="limparChatLab()">Limpar</button>
+    </div>
+  </div>
+
+  <div id="cl-resultado"></div>
+
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">Histórico de análises</div></div>
+    <div id="cl-historico"></div>
+  </div>
+</section>
+
+<!-- ===================== GERADOR ===================== -->
+<section class="view" id="v-gerador">
+  <div class="eyebrow">relatórios de venda</div>
+  <div class="view-title">Gerador</div>
+  <div class="view-sub">Suba as planilhas dos modelos, monte os turnos e gere os relatórios prontos</div>
+
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">📊 Planilhas dos modelos</div><div class="panel-note">XLSX exportado do Privacy</div></div>
+    <div id="ger-sheets"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">Configuração</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="field" style="margin:0"><label class="flabel">Data do relatório</label><input type="date" class="finput" id="ger-data"></div>
+      <div class="field" style="margin:0"><label class="flabel">Canal</label><input class="finput" id="ger-canal" value="PRIVACY FREE" onblur="S.geradorCanal=this.value;save();"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">👥 Meu time</div><div class="panel-note">Turnos do seu time neste dia</div></div>
+      <button class="btn btn-primary btn-xs" onclick="gerAddChatter('geradorMeu')">+ chatter</button>
+    </div>
+    <div id="ger-meu-cards"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">🌐 Time externo</div><div class="panel-note">Vendas deles são excluídas dos seus relatórios</div></div>
+      <button class="btn btn-ghost btn-xs" onclick="gerAddChatter('geradorExt')">+ chatter</button>
+    </div>
+    <div id="ger-ext-cards"></div>
+  </div>
+
+  <button class="btn btn-primary btn-block" onclick="gerarRelatorios()">📄 Gerar relatórios</button>
+  <div id="ger-out" style="margin-top:14px"></div>
 </section>
 
 </main>

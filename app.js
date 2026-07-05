@@ -34,6 +34,13 @@ function migrateState(s){
   if(!s.modelRequestsSplit)s.modelRequestsSplit={};
   if(!s.demandas2||!Array.isArray(s.demandas2))s.demandas2=[];
   if(!s.justificativas)s.justificativas={};
+  if(!s.chatlabAnalyses)s.chatlabAnalyses=[];
+  if(!s.chatterTraining)s.chatterTraining={};
+  if(!s.weekOrients)s.weekOrients=[];
+  else{const wk=getWeekKey();s.weekOrients=s.weekOrients.filter(o=>!o.done||o.doneWeek===wk);} // done items vanish on new week
+  if(!s.geradorMeu)s.geradorMeu=[];
+  if(!s.geradorExt)s.geradorExt=[];
+  if(!s.geradorCanal)s.geradorCanal='PRIVACY FREE';
   if(Array.isArray(s.shifts))s.shifts=s.shifts.map(sh=>({start2:'',end2:'',folgaDia:'',modelIds:[],...sh}));
   if(!s.chatterTrainings)s.chatterTrainings=[];
   if(s.hasSeededStudies===undefined)s.hasSeededStudies=false;
@@ -259,6 +266,12 @@ let S={
   managerProfile:{},     // {name, cargo, photoUrl}
   motivacionalHome:{},   // weekKey -> {idea, results}
   chatAnalyses:{},       // dateKey -> [{id, chatterId, ...scores, pontosFracos, pontosFortes}]
+  chatlabAnalyses:[],    // ChatLab: [{id, chatterId, date, igp, raw, resumo}]
+  chatterTraining:{},    // chatterId -> texto "como treinar melhor"
+  weekOrients:[],        // orientações da semana [{id, chatterId, text, done, doneWeek}]
+  geradorMeu:[],         // gerador: chatters do meu time [{name, model, intervals:[{s,e,extra}]}]
+  geradorExt:[],         // gerador: time externo
+  geradorCanal:'PRIVACY FREE',
   semanaObjetivos:{},    // weekKey -> [{id, label, valor, done}]
   modelRequestsSplit:{}, // weekKey -> {modelId: text}
   demandas2:[],          // persistent list [{id,text,date,done}] — does NOT reset daily
@@ -307,16 +320,17 @@ function nowHHMM(){const n=new Date();return p2(n.getHours())+':'+p2(n.getMinute
 function todayKey(){return fmt(new Date());}
 function getTodayDayKey(){return DAY_KEYS[new Date().getDay()];}
 function getWeekDates(){
-  const now=new Date(),dow=now.getDay();
-  const mon=new Date(now);mon.setDate(now.getDate()-((dow+6)%7));
-  return Array.from({length:7},(_,i)=>{const d=new Date(mon);d.setDate(mon.getDate()+i);return d;});
+  // Week starts SUNDAY (evolução semanal medida a partir de domingo)
+  const now=new Date(),dow=now.getDay(); // 0=Dom
+  const sun=new Date(now);sun.setDate(now.getDate()-dow);
+  return Array.from({length:7},(_,i)=>{const d=new Date(sun);d.setDate(sun.getDate()+i);return d;});
 }
 function getWeekKey(){const wd=getWeekDates();return fmt(wd[0]);}
 function money(n){return 'R$ '+ (n||0).toLocaleString('pt-BR',{minimumFractionDigits:2});}
 function moneyShort(n){return 'R$'+(n||0).toLocaleString('pt-BR',{maximumFractionDigits:0});}
 
 // ---------- NAV ----------
-const VIEWS=['home','turno','semana','time','fat','report','extra','teamreports','gestao','fichas','estudos','evolucao'];
+const VIEWS=['home','turno','semana','time','fat','report','extra','teamreports','gestao','fichas','estudos','evolucao','chatlab','gerador'];
 function navTo(view){
   if(!view)return;
   VIEWS.forEach(v=>{const el=document.getElementById('v-'+v);if(el)el.classList.remove('active');});
@@ -339,6 +353,8 @@ function renderView(v){
   if(v==='fichas')renderFichas();
   if(v==='estudos')renderEstudos();
   if(v==='evolucao')renderEvolucao();
+  if(v==='chatlab')renderChatLab();
+  if(v==='gerador')renderGerador();
 }
 document.querySelectorAll('.toptab,.navbtn').forEach(el=>el.addEventListener('click',()=>navTo(el.dataset.go)));
 
@@ -551,6 +567,7 @@ function deleteTask(id){
    FEATURE 3 — WEEKLY GOALS (team-level planning)
    =========================================================== */
 function renderSemana(){
+  renderWeekOrients();
   const wk=getWeekDates();
   document.getElementById('semana-range').textContent=`${wk[0].getDate()}/${wk[0].getMonth()+1} – ${wk[6].getDate()}/${wk[6].getMonth()+1}`;
   const notesEl=document.getElementById('week-notes');
@@ -801,6 +818,7 @@ function getSmartAlerts(){
 
   S.chatters.filter(c=>c.time!=='elite').forEach(c=>{
     const id=c.id;
+    const target=parseFloat(goals[id])||0;
     const current=getChatterWeekRevenue(id);
 
     if(target>0){
@@ -2956,7 +2974,7 @@ function renderDailyByModel(){
   if(!el)return;
   if(!S.models.length){el.innerHTML='<div class="empty"><div class="empty-tx">Cadastre modelos para ver o diário</div></div>';return;}
   const wd=getWeekDates();
-  const dayLabels=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+  const dayLabels=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
   let html=`<div style="overflow-x:auto"><table class="rtable"><thead><tr><th>Modelo</th>${dayLabels.map(d=>`<th style="text-align:right">${d}</th>`).join('')}<th style="text-align:right;color:var(--ok)">Total</th></tr></thead><tbody>`;
   S.models.forEach(m=>{
     let rowTotal=0;
@@ -3060,12 +3078,9 @@ function getChatterExtraRevenue(chatterId){
    amount, and how much they need per remaining day to hit it.
    =========================================================== */
 function getDaysRemainingInWeek(){
-  // Counts today + days left until Sunday (inclusive), so the
-  // person always sees "still achievable today" math.
-  const now=new Date();
-  const dow=now.getDay(); // 0=Sun..6=Sat
-  const isoDow=dow===0?7:dow; // 1=Mon..7=Sun
-  return Math.max(1,7-isoDow+1);
+  // Week runs Sunday→Saturday. Counts today + days left until Saturday.
+  const dow=new Date().getDay(); // 0=Dom..6=Sáb
+  return Math.max(1,7-dow);
 }
 function renderChatterGoals(){
   const el=document.getElementById('chatter-goals-list');
@@ -3395,8 +3410,9 @@ function parseTeamReports(){
           current.currentModel.shiftStart=shiftMatch[1];
           current.currentModel.shiftEnd=shiftMatch[2];
         }
-        // Detect sales: "HH:MM - R$ XX,XX"
-        const saleTimePattern=/(\d{2}:\d{2})\s*-\s*R\$/g;
+        // Detect sale times: "HH:MM -" (R$ value may be on same OR next line in real reports)
+        // Shift times use "às" so they never match "HH:MM -"
+        const saleTimePattern=/(\d{2}:\d{2})\s*-/g;
         let st;
         while((st=saleTimePattern.exec(line))!==null){
           current.currentModel.saleTimes.push(st[1]);
@@ -4935,13 +4951,46 @@ function renderEvolucao(){
     const evoVph=entries.length>=2&&entries[0][1].vendasPorHora>0?Math.round(((entries[entries.length-1][1].vendasPorHora-entries[0][1].vendasPorHora)/entries[0][1].vendasPorHora)*100):null;
 
     // Generate recommendations based on data
+    // Best/worst day analysis
+    let bestDay=null,worstDay=null;
+    wkeys.forEach(dk=>{
+      const a=analytics[dk];
+      if(!a||!(a.chatterTotal>0))return;
+      if(!bestDay||a.chatterTotal>analytics[bestDay].chatterTotal)bestDay=dk;
+      if(!worstDay||a.chatterTotal<analytics[worstDay].chatterTotal)worstDay=dk;
+    });
+    const DIAS=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+    const dayName=dk=>{const[y,mo,d]=dk.split('-').map(Number);return DIAS[new Date(y,mo-1,d).getDay()];};
+
+    // Weak points from chat analyses (lowest scoring metric)
+    let weakestMetric=null;
+    if(analyses.length){
+      let low=6,lowM=null;
+      CHAT_METRICS.forEach(m=>{
+        const avgM=analyses.reduce((s,a)=>s+(a[m]||0),0)/analyses.length;
+        if(avgM>0&&avgM<low){low=avgM;lowM=m;}
+      });
+      if(lowM&&low<4)weakestMetric={name:CHAT_METRIC_LABELS[lowM],score:Math.round(low*10)/10};
+    }
+
+    // Data-driven personalized recommendations
     const recs=[];
-    if(avgHigh<20)recs.push('Trabalhar abordagem de high ticket — % abaixo do ideal');
-    if(avgVph<10)recs.push('Aumentar valor/hora — pode indicar poucos atendimentos ou ticket baixo');
-    if(maxGap>90)recs.push(`Gap máximo de ${maxGap}min sem vender — verificar consistência`);
-    if(avgScore!==null&&avgScore<3)recs.push('Scores de análise do chat abaixo da média — focar em treinamento');
-    if(pct!==null&&pct<50)recs.push(`Apenas ${pct}% da meta — avaliar volume de atendimento`);
-    if(!recs.length&&rev>0)recs.push('Bom desempenho — manter consistência');
+    if(peakHour)recs.push(`Rende mais entre <strong>${peakHour}</strong> — concentre os leads quentes e ofertas nesse horário`);
+    if(bestDay&&worstDay&&bestDay!==worstDay){
+      const diff=analytics[bestDay].chatterTotal-analytics[worstDay].chatterTotal;
+      recs.push(`Melhor dia: <strong>${dayName(bestDay)}</strong> (${money(analytics[bestDay].chatterTotal)}) vs pior: ${dayName(worstDay)} (${money(analytics[worstDay].chatterTotal)}) — investigar o que mudou (${money(diff)} de diferença)`);
+    }
+    if(avgTicket>0&&avgHigh<20)recs.push(`High ticket em ${avgHigh}% — ticket médio é ${money(avgTicket)}, treinar ofertas acima de ${money(avgTicket*1.5)}`);
+    if(avgVph>0&&avgVph<10)recs.push(`${money(avgVph)}/hora está abaixo do mínimo (R$10/h) — revisar abordagem ou volume de leads`);
+    else if(avgVph>=10&&avgVph<20)recs.push(`${money(avgVph)}/hora é regular — meta: chegar a R$20/h aumentando conversão nos horários fortes`);
+    if(maxGap>90)recs.push(`Ficou <strong>${maxGap}min sem vender</strong> — mapear o que aconteceu nesse intervalo (pausa? lead frio? falta de fila?)`);
+    if(weakestMetric)recs.push(`Ponto mais fraco nas análises de chat: <strong>${weakestMetric.name}</strong> (${weakestMetric.score}/5) — prioridade de treinamento`);
+    if(pct!==null&&pct<50){
+      const falta=meta-getChatterWeekRevenue(c.id);
+      recs.push(`${pct}% da meta — faltam ${money(falta)}; com valor/hora atual precisa de ~${avgVph>0?Math.ceil(falta/avgVph)+'h':'mais dados'} de chat focado`);
+    }
+    if(!recs.length&&rev>0)recs.push(`Desempenho sólido (${money(rev)}, ${totalVendas} vendas) — manter ritmo e testar aumento de ticket`);
+    if(!recs.length)recs.push('Sem dados suficientes — processe os relatórios de vendas desta semana');
 
     const timeLabel=c.time==='elite'?'<span class="pill pill-warn" style="font-size:9px">⭐ Elite</span>':'';
 
@@ -4987,6 +5036,33 @@ function renderEvolucao(){
       <div style="background:var(--bg-soft);border-radius:8px;padding:10px">
         <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">💡 ONDE MELHORAR</div>
         ${recs.map(r=>`<div style="font-size:12.5px;color:var(--text);padding:3px 0;border-bottom:1px solid var(--line)">• ${r}</div>`).join('')}
+      </div>
+      ${(()=>{
+        // Diagnostic square — latest ChatLab analysis
+        const clList=(S.chatlabAnalyses||[]).filter(a=>a.chatterId===c.id);
+        const last=clList[clList.length-1];
+        if(!last)return`<div style="background:var(--info-soft);border-radius:8px;padding:10px;margin-top:8px">
+          <div style="font-size:11px;font-weight:700;color:var(--info);margin-bottom:4px">🔬 DIAGNÓSTICO CHATLAB</div>
+          <div style="font-size:12px;color:var(--text3)">Sem análise ainda — <span style="color:var(--info);cursor:pointer;text-decoration:underline" onclick="navTo('chatlab')">analisar conversa →</span></div>
+        </div>`;
+        const col=last.igp>=70?'var(--ok)':last.igp>=50?'var(--warn)':'var(--bad)';
+        return`<div style="background:var(--info-soft);border-radius:8px;padding:10px;margin-top:8px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+            <div style="font-size:11px;font-weight:700;color:var(--info)">🔬 DIAGNÓSTICO CHATLAB</div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-family:var(--font-mono);font-weight:800;font-size:16px;color:${col}">${last.igp||'—'}</span>
+              <span style="font-size:10px;color:var(--text3)">IGP · ${new Date(last.date).toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})} · ${clList.length} análise${clList.length>1?'s':''}</span>
+            </div>
+          </div>
+          ${last.resumo?`<div style="font-size:12px;color:var(--text2);line-height:1.6">${clMd(last.resumo)}</div>`:''}
+        </div>`;
+      })()}
+      <div style="background:var(--warn-soft);border-radius:8px;padding:10px;margin-top:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div style="font-size:11px;font-weight:700;color:var(--warn)">🏋️ COMO TREINAR MELHOR</div>
+          <button class="btn btn-ghost btn-xs" onclick="sendTrainingToWeek('${c.id}')">→ orientações da semana</button>
+        </div>
+        <textarea class="ftext" style="min-height:52px;font-size:12.5px;background:#fff" placeholder="Escreva como treinar ${c.name} esta semana..." onblur="saveChatterTraining('${c.id}',this.value)">${(S.chatterTraining[c.id]||'')}</textarea>
       </div>
     </div>`;
   });
@@ -5280,3 +5356,358 @@ function toggleTurnoEditMode(){
   if(turnoEditMode)toast('Modo edição ativo — ✏️ editar ou ✕ remover');
 }
 
+
+/* ===========================================================
+   ORIENTAÇÕES DA SEMANA — done items only vanish on new week
+   =========================================================== */
+function renderWeekOrients(){
+  const el=document.getElementById('week-orients-list');
+  if(!el)return;
+  const wk=getWeekKey();
+  // prune: done in a PREVIOUS week disappears
+  S.weekOrients=S.weekOrients.filter(o=>!o.done||o.doneWeek===wk);
+  if(!S.weekOrients.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px;padding:6px 0">Nenhuma orientação esta semana</div>';return;}
+  el.innerHTML=S.weekOrients.map(o=>{
+    const c=o.chatterId?S.chatters.find(ch=>ch.id===o.chatterId):null;
+    return`<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
+      <button onclick="toggleWeekOrient('${o.id}')" style="width:20px;height:20px;border-radius:5px;border:2px solid ${o.done?'var(--ok)':'var(--line-strong)'};background:${o.done?'var(--ok)':'transparent'};cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;margin-top:1px">${o.done?'<span style="color:#fff">✓</span>':''}</button>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;${o.done?'text-decoration:line-through;color:var(--text3)':''}">${o.text}</div>
+        ${c?`<div style="font-size:10.5px;color:var(--accent);margin-top:1px">👤 ${c.name}</div>`:''}
+      </div>
+      <button onclick="removeWeekOrient('${o.id}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px">✕</button>
+    </div>`;
+  }).join('');
+}
+function addWeekOrient(text,chatterId){
+  const inp=document.getElementById('week-orient-input');
+  const t=(typeof text==='string'&&text)?text:(inp?.value.trim());
+  if(!t){toast('⚠️ Escreva a orientação');return;}
+  S.weekOrients.push({id:'wo'+Date.now(),chatterId:chatterId||null,text:t,done:false,doneWeek:null});
+  if(inp&&typeof text!=='string')inp.value='';
+  save();renderWeekOrients();
+  toast('✅ Orientação adicionada à semana');
+}
+function toggleWeekOrient(id){
+  const o=S.weekOrients.find(x=>x.id===id);
+  if(!o)return;
+  o.done=!o.done;
+  o.doneWeek=o.done?getWeekKey():null;
+  save();renderWeekOrients();
+}
+function removeWeekOrient(id){
+  S.weekOrients=S.weekOrients.filter(x=>x.id!==id);
+  save();renderWeekOrients();
+}
+
+/* ===========================================================
+   CHATLAB — análise de conversas com IA (aba integrada)
+   =========================================================== */
+function renderChatLab(){
+  const sel=document.getElementById('cl-chatter');
+  if(sel){
+    const cur=sel.value;
+    sel.innerHTML='<option value="">— selecionar —</option>'+S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+    if(cur)sel.value=cur;
+  }
+  renderChatLabHistorico();
+}
+function renderChatLabHistorico(){
+  const el=document.getElementById('cl-historico');
+  if(!el)return;
+  if(!S.chatlabAnalyses.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Nenhuma análise ainda</div>';return;}
+  el.innerHTML=[...S.chatlabAnalyses].reverse().slice(0,15).map(a=>{
+    const c=S.chatters.find(ch=>ch.id===a.chatterId);
+    const col=a.igp>=70?'var(--ok)':a.igp>=50?'var(--warn)':a.igp?'var(--bad)':'var(--text3)';
+    return`<div style="border:1px solid var(--line);border-radius:9px;margin-bottom:8px;overflow:hidden">
+      <div style="padding:10px 13px;background:var(--bg-soft);display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleClAn('${a.id}')">
+        <div>
+          <div style="font-size:13px;font-weight:700">${c?c.name:'?'}</div>
+          <div style="font-size:11px;color:var(--text3)">${new Date(a.date).toLocaleDateString('pt-BR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:18px;font-weight:800;font-family:var(--font-mono);color:${col}">${a.igp||'—'}</span>
+          <span style="font-size:10px;color:var(--text3)" id="cl-ic-${a.id}">▼</span>
+        </div>
+      </div>
+      <div id="cl-body-${a.id}" style="display:none"><div class="cl-md" style="padding:16px">${clMd(a.raw||'')}</div></div>
+    </div>`;
+  }).join('');
+}
+function toggleClAn(id){
+  const b=document.getElementById('cl-body-'+id),ic=document.getElementById('cl-ic-'+id);
+  if(!b)return;
+  const open=b.style.display!=='none';
+  b.style.display=open?'none':'block';
+  if(ic)ic.textContent=open?'▼':'▲';
+}
+function limparChatLab(){
+  const c=document.getElementById('cl-conversa');if(c)c.value='';
+  const x=document.getElementById('cl-ctx');if(x)x.value='';
+  const r=document.getElementById('cl-resultado');if(r)r.innerHTML='';
+}
+function clMd(md){
+  return md
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/^## (.+)$/gm,'<h3 style="font-size:14px;font-weight:700;color:var(--accent);margin:16px 0 6px">$1</h3>')
+    .replace(/^### (.+)$/gm,'<h4 style="font-size:13px;font-weight:600;margin:10px 0 4px">$1</h4>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/^---$/gm,'<hr style="border:none;border-top:1px solid var(--line);margin:14px 0">')
+    .replace(/^\|(.+)\|$/gm,row=>{
+      const cells=row.slice(1,-1).split('|');
+      if(cells.every(c=>/^[-\s:]+$/.test(c)))return'';
+      return'<tr>'+cells.map(c=>`<td style="padding:5px 9px;border-bottom:1px solid var(--line);font-size:12.5px">${c.trim()}</td>`).join('')+'</tr>';
+    })
+    .replace(/(<tr>[\s\S]*?<\/tr>\n?)+/g,'<table style="width:100%;border-collapse:collapse;margin:8px 0">$&</table>')
+    .replace(/^[-*] (.+)$/gm,'<li style="font-size:13px;color:var(--text2);line-height:1.65">$1</li>')
+    .replace(/^\d+\. (.+)$/gm,'<li style="font-size:13px;color:var(--text2);line-height:1.65">$1</li>')
+    .replace(/(<li[\s\S]*?<\/li>\n?)+/g,'<ul style="padding-left:18px;margin:6px 0">$&</ul>')
+    .replace(/\n{2,}/g,'<br>');
+}
+async function rodarChatLab(){
+  const cid=document.getElementById('cl-chatter')?.value;
+  const conv=document.getElementById('cl-conversa')?.value.trim();
+  const ctx=document.getElementById('cl-ctx')?.value.trim();
+  if(!cid){toast('⚠️ Selecione um chatter');return;}
+  if(!conv){toast('⚠️ Cole a conversa');return;}
+  const c=S.chatters.find(ch=>ch.id===cid);
+  const btn=document.getElementById('cl-btn');
+  btn.disabled=true;btn.textContent='Analisando…';
+  document.getElementById('cl-resultado').innerHTML='<div style="text-align:center;padding:30px;color:var(--text2);font-size:13px">⏳ A IA está analisando a conversa…</div>';
+
+  const prev=S.chatlabAnalyses.filter(a=>a.chatterId===cid);
+  const system='Você é a Gerente Sênior de Performance de uma operação de vendas por chat. Analisa conversas de vendedores (chatters) e gera diagnósticos técnicos, precisos e acionáveis. Seja crítica, objetiva e didática. Nunca elogie sem evidência. Nunca critique sem ensinar. Toda nota deve ter justificativa baseada na conversa real.';
+  const prompt=`Analise a conversa do chatter **${c.name}** (nível: ${c.level||'—'}).${ctx?'\nContexto: '+ctx:''}${prev.length?'\nAnálise nº '+(prev.length+1)+' — compare evolução quando relevante.':''}\n\n---\nCONVERSA:\n${conv}\n---\n\nGere análise em Markdown com: notas X/10 e evidências para Conexão Emocional, Conversão e Timing, Leitura de Sinais de Compra, Condução, Inteligência Emocional, Perfil do Lead, Qualificação, Inteligência Comercial, Criatividade, Gestão do Tempo e Retenção. Depois:\n\n## 🔴 Maiores Erros (graves → leves, com impacto)\n## 🟢 O Que Não Deve Mudar\n## 💬 Mensagens Desperdiçadas (reescreva 2-3)\n## 📋 Plano de Treinamento (3 prioridades: objetivo — como treinar — resultado)\n## 📊 Dashboard (tabela indicador × nota)\n**IGP: XX/100** (pesos: Conversão 20%, Conexão 15%, Condução 15%, Sinais 10%, Comercial 10%, demais 5% cada)\n## 🎯 Resumo Executivo\n- Ponto forte / Maior oportunidade / Erro crítico / Foco da semana / Parecer (Promoveria / Manteria com treinamento / Acompanhamento intensivo)`;
+
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:4000,system,messages:[{role:'user',content:prompt}]})
+    });
+    const data=await res.json();
+    const text=data.content?.map(b=>b.type==='text'?b.text:'').join('')||'';
+    if(!text)throw new Error(data.error?.message||'Resposta vazia da IA');
+    const igpM=text.match(/IGP[^:]*:\s*\**\s*(\d+)/i);
+    const igp=igpM?parseInt(igpM[1]):null;
+    // Extract resumo executivo snippet for the Evolução diagnostic square
+    const resumoM=text.match(/## 🎯 Resumo Executivo([\s\S]*?)(?=\n## |$)/i);
+    const resumo=resumoM?resumoM[1].trim().slice(0,600):'';
+    S.chatlabAnalyses.push({id:'cla'+Date.now(),chatterId:cid,date:new Date().toISOString(),igp,raw:text,resumo});
+    save();
+    const col=igp>=70?'var(--ok)':igp>=50?'var(--warn)':'var(--bad)';
+    document.getElementById('cl-resultado').innerHTML=`<div class="panel" style="border-left:3px solid ${col}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-weight:700">${c.name} — análise concluída</div>
+        ${igp?`<div style="font-size:24px;font-weight:800;font-family:var(--font-mono);color:${col}">${igp}<span style="font-size:11px;color:var(--text3)">/100</span></div>`:''}
+      </div>
+      <div class="cl-md">${clMd(text)}</div>
+    </div>`;
+    renderChatLabHistorico();
+    toast('✅ Análise salva — aparece na Evolução');
+  }catch(err){
+    document.getElementById('cl-resultado').innerHTML=`<div class="panel" style="border-color:var(--bad)"><div style="color:var(--bad);font-size:13px">❌ ${err.message}</div><div style="font-size:12px;color:var(--text3);margin-top:5px">Verifique a conexão e tente novamente.</div></div>`;
+  }finally{
+    btn.disabled=false;btn.textContent='⚡ Analisar';
+  }
+}
+
+/* ===========================================================
+   TREINAMENTO POR CHATTER (Evolução) → orientações da semana
+   =========================================================== */
+function saveChatterTraining(cid,val){
+  S.chatterTraining[cid]=val;
+  save();
+}
+function sendTrainingToWeek(cid){
+  const txt=(S.chatterTraining[cid]||'').trim();
+  if(!txt){toast('⚠️ Escreva o treinamento primeiro');return;}
+  addWeekOrient(txt,cid);
+}
+
+/* ===========================================================
+   GERADOR DE RELATÓRIOS (aba integrada, sem Discord)
+   =========================================================== */
+let gerSheets={}; // modelName(UPPER) -> rows (session only, not persisted)
+function renderGerador(){
+  // Sheets uploads per model
+  const sh=document.getElementById('ger-sheets');
+  if(sh){
+    if(!S.models.length){sh.innerHTML='<div style="color:var(--text3);font-size:12.5px">Cadastre modelos na aba Faturamento primeiro</div>';}
+    else sh.innerHTML=S.models.map(m=>{
+      const key=m.name.toUpperCase();
+      const n=gerSheets[key]?.length;
+      return`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
+        <div style="font-size:13.5px;font-weight:700;flex:1">${m.emoji||'🧩'} ${m.name}</div>
+        <span class="pill ${n?'pill-ok':'pill-flat'}">${n?n+' linhas':'sem planilha'}</span>
+        <label class="btn btn-ghost btn-xs" style="cursor:pointer">📂 subir XLSX<input type="file" accept=".xlsx,.xls" style="display:none" onchange="gerLoadXlsx(event,'${key}')"></label>
+      </div>`;
+    }).join('');
+  }
+  const canal=document.getElementById('ger-canal');
+  if(canal)canal.value=S.geradorCanal||'PRIVACY FREE';
+  const dt=document.getElementById('ger-data');
+  if(dt&&!dt.value)dt.value=todayKey();
+  renderGerCards('geradorMeu','ger-meu-cards');
+  renderGerCards('geradorExt','ger-ext-cards');
+}
+function gerLoadXlsx(e,modelKey){
+  const f=e.target.files[0];if(!f)return;
+  if(typeof XLSX==='undefined'){toast('❌ Biblioteca XLSX não carregou — recarregue a página');return;}
+  const r=new FileReader();
+  r.onload=ev=>{
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'array'});
+      gerSheets[modelKey]=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      toast(`✅ ${modelKey}: ${gerSheets[modelKey].length} linhas`);
+      renderGerador();
+    }catch(err){toast('❌ Erro ao ler planilha');}
+  };
+  r.readAsArrayBuffer(f);
+}
+function gerAddChatter(team){
+  if(!S.models.length){toast('⚠️ Cadastre modelos primeiro');return;}
+  S[team].push({name:'',model:S.models[0].name.toUpperCase(),intervals:[{s:'',e:'',extra:false}]});
+  save();renderGerador();
+}
+function renderGerCards(team,elId){
+  const el=document.getElementById(elId);
+  if(!el)return;
+  const list=S[team]||[];
+  if(!list.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px;padding:4px 0">Nenhum chatter — use o botão +</div>';return;}
+  el.innerHTML=list.map((c,ci)=>`<div style="background:var(--bg-soft);border-radius:10px;padding:12px;margin-bottom:10px">
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <input class="finput" style="flex:2" placeholder="Nome do chatter" value="${c.name||''}" list="ger-names" onblur="S['${team}'][${ci}].name=this.value;save();">
+      <select class="fselect" style="flex:1" onchange="S['${team}'][${ci}].model=this.value;save();">
+        ${S.models.map(m=>`<option value="${m.name.toUpperCase()}" ${c.model===m.name.toUpperCase()?'selected':''}>${m.name}</option>`).join('')}
+      </select>
+      <button onclick="S['${team}'].splice(${ci},1);save();renderGerador();" style="background:none;border:none;color:var(--bad);cursor:pointer;font-size:15px">✕</button>
+    </div>
+    ${(c.intervals||[]).map((iv,ii)=>`<div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
+      <input class="finput" style="width:90px;font-family:var(--font-mono)" placeholder="início" value="${iv.s||''}" onblur="S['${team}'][${ci}].intervals[${ii}].s=this.value;save();">
+      <span style="color:var(--text3);font-size:12px">às</span>
+      <input class="finput" style="width:90px;font-family:var(--font-mono)" placeholder="fim" value="${iv.e||''}" onblur="S['${team}'][${ci}].intervals[${ii}].e=this.value;save();">
+      <label style="display:flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text2);cursor:pointer">
+        <input type="checkbox" style="width:auto" ${iv.extra?'checked':''} onchange="S['${team}'][${ci}].intervals[${ii}].extra=this.checked;save();">⚡ extra
+      </label>
+      <button onclick="S['${team}'][${ci}].intervals.splice(${ii},1);save();renderGerador();" style="background:none;border:none;color:var(--text3);cursor:pointer">✕</button>
+    </div>`).join('')}
+    <button class="btn btn-ghost btn-xs" onclick="S['${team}'][${ci}].intervals.push({s:'',e:'',extra:false});save();renderGerador();">+ intervalo</button>
+  </div>`).join('')+`<datalist id="ger-names">${S.chatters.map(c=>`<option value="${c.name}">`).join('')}</datalist>`;
+}
+function gerToMins(t){if(!t)return 0;const p=t.split(':').map(Number);return p[0]*60+(p[1]||0);}
+function gerInIvs(mins,ivs){
+  for(const iv of ivs){
+    if(!iv.s)continue;
+    const sm=gerToMins(iv.s),em=gerToMins(iv.e||'23:59');
+    if(sm<=em){if(mins>=sm&&mins<=em)return true;}
+    else{if(mins>=sm||mins<=em)return true;}
+  }
+  return false;
+}
+function gerSalesFor(c,excludeSet){
+  const sheet=gerSheets[c.model];
+  if(!sheet)return null;
+  const valid=['Chat','Mimo - Chat'];
+  const sales=[];
+  for(const row of sheet){
+    const tipo=(row['Tipo de entrada']||'').trim();
+    if(!valid.includes(tipo))continue;
+    const hora=(row['Hora']||'').toString().substring(0,5);
+    if(excludeSet&&excludeSet.has(hora))continue;
+    if(!gerInIvs(gerToMins(hora),c.intervals))continue;
+    sales.push({hora,val:parseFloat(row['Sua comissão']||0)});
+  }
+  sales.sort((a,b)=>gerToMins(a.hora)-gerToMins(b.hora));
+  return sales;
+}
+function gerBuildText(c,dateStr,canal,excludeSet){
+  const sales=gerSalesFor(c,excludeSet);
+  if(sales===null)return{warn:'planilha de '+c.model+' não carregada'};
+  const normIvs=c.intervals.filter(iv=>iv.s&&!iv.extra);
+  const extraIvs=c.intervals.filter(iv=>iv.s&&iv.extra);
+  const blocks=[];
+  const mkBlock=(ivs,label)=>{
+    if(!ivs.length)return null;
+    const bSales=sales.filter(s=>gerInIvs(gerToMins(s.hora),ivs));
+    // sort in shift-relative order (overnight: 23:30 comes before 03:15)
+    const anchor=gerToMins(ivs[0].s);
+    bSales.sort((a,b)=>((gerToMins(a.hora)-anchor+1440)%1440)-((gerToMins(b.hora)-anchor+1440)%1440));
+    const total=bSales.reduce((s,x)=>s+x.val,0);
+    return{label,ivStr:ivs.map(iv=>iv.s+' às '+(iv.e||'?')).join(' e '),sales:bSales,total};
+  };
+  const nb=mkBlock(normIvs,c.model+' '+canal);
+  const eb=mkBlock(extraIvs,c.model+' HORA EXTRA');
+  [nb,eb].forEach(b=>{if(b)blocks.push(b);});
+  if(!blocks.length)return{warn:'sem intervalos válidos'};
+  const lines=['Data: '+dateStr,'Nome: '+c.name];
+  let grandTotal=0;
+  blocks.forEach(b=>{
+    lines.push(b.label,b.ivStr,...b.sales.map(s=>s.hora+' - R$ '+s.val.toFixed(2).replace('.',',')));
+    lines.push('Total de comissões: R$ '+b.total.toFixed(2).replace('.',','));
+    grandTotal+=b.total;
+  });
+  return{text:lines.join('\n'),total:grandTotal};
+}
+function gerarRelatorios(){
+  const out=document.getElementById('ger-out');
+  const dataVal=document.getElementById('ger-data')?.value;
+  const canal=(document.getElementById('ger-canal')?.value.trim()||'PRIVACY FREE').toUpperCase();
+  const meu=(S.geradorMeu||[]).filter(c=>c.name);
+  const ext=(S.geradorExt||[]).filter(c=>c.name);
+  if(!meu.length&&!ext.length){out.innerHTML='<div class="panel" style="color:var(--text3);font-size:13px">Adicione chatters com o botão + antes de gerar</div>';return;}
+  const dateStr=dataVal?dataVal.split('-').reverse().join('/'):'--/--/----';
+
+  // sales times of ext team per model → excluded from meu reports
+  const extTimes={};
+  ext.forEach(c=>{
+    const sales=gerSalesFor(c,null)||[];
+    if(!extTimes[c.model])extTimes[c.model]=new Set();
+    sales.forEach(s=>extTimes[c.model].add(s.hora));
+  });
+
+  let html='';const allTexts=[];
+  const renderGroup=(list,title,useExcl)=>{
+    if(!list.length)return;
+    html+=`<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 8px">${title}</div>`;
+    list.forEach((c,i)=>{
+      const r=gerBuildText(c,dateStr,canal,useExcl?(extTimes[c.model]||null):null);
+      if(r.warn){html+=`<div class="panel" style="border-color:var(--warn);padding:10px 14px;font-size:12.5px"><strong>${c.name}</strong> — ⚠️ ${r.warn}</div>`;return;}
+      allTexts.push(r.text);
+      const tid='gtx'+title.length+'_'+i;
+      html+=`<div class="panel" style="padding:0;overflow:hidden">
+        <div style="padding:10px 14px;background:var(--bg-soft);display:flex;align-items:center;justify-content:space-between">
+          <div style="font-weight:700;font-size:13.5px">${c.name} <span style="font-size:11px;color:var(--text3)">${c.model}</span></div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-family:var(--font-mono);font-weight:800;color:var(--ok)">${money(r.total)}</span>
+            <button class="btn btn-ghost btn-xs" onclick="gerCopy('${tid}')">📋 copiar</button>
+          </div>
+        </div>
+        <pre id="${tid}" style="margin:0;padding:12px 14px;font-family:var(--font-mono);font-size:11.5px;white-space:pre-wrap;color:var(--text2)">${r.text}</pre>
+      </div>`;
+    });
+  };
+  renderGroup(meu,'Meu time',true);
+  renderGroup(ext,'Time externo',false);
+
+  if(allTexts.length){
+    window._gerAllTexts=allTexts.join('\n\n');
+    html+=`<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(window._gerAllTexts).then(()=>toast('📋 Todos copiados!'))">📋 Copiar todos</button>
+      <button class="btn btn-primary btn-sm" onclick="gerEnviarRelEquipe()">→ Processar no Rel. Equipe</button>
+    </div>`;
+  }
+  out.innerHTML=html;
+}
+function gerCopy(id){
+  const el=document.getElementById(id);
+  if(!el)return;
+  navigator.clipboard.writeText(el.textContent).then(()=>toast('📋 Copiado!'));
+}
+function gerEnviarRelEquipe(){
+  const inp=document.getElementById('teamreport-input');
+  if(!inp||!window._gerAllTexts){toast('⚠️ Gere os relatórios primeiro');return;}
+  inp.value=window._gerAllTexts;
+  navTo('teamreports');
+  parseTeamReports();
+  toast('✅ Relatórios processados no Rel. Equipe!');
+}
