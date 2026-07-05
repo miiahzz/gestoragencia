@@ -1485,14 +1485,23 @@ function renderTurnoDay(){
   const renderRow=r=>{
     const timeStr=r.windows.map(w=>`${w.start}–${w.end}`).join(' · ');
     const modelStr=r.models.map(m=>`${m.emoji||'🧩'} ${m.name}`).join(' · ');
-    const color=statusColors[r.status];
-    return`<div onclick="openEditShiftFromProfile('${r.shiftId}','${r.c.id}')" style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);cursor:pointer">
-      <div style="font-size:18px;flex-shrink:0">${statusIcons[r.status]}</div>
+    const isManualOn=(S.turnoLog[today]||[]).some(x=>x.chatterId===r.c.id&&x.status==='manual_online');
+    const isManualOff=(S.turnoLog[today]||[]).some(x=>x.chatterId===r.c.id&&x.status==='manual_offline');
+    const effectiveStatus=isManualOn?'on':isManualOff?'done':r.status;
+    const isOnline=effectiveStatus==='on';
+    return`<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)">
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:14.5px">${r.c.name}${r.isSwap?` <span style="font-size:10px;color:var(--info)">(troca p/ ${r.origName||'?'})</span>`:''}</div>
-        <div style="font-size:12px;color:var(--text2);margin-top:2px">${timeStr}${modelStr?' · '+modelStr:''}</div>
+        <div style="font-weight:700;font-size:14px">${r.c.name}${r.isSwap?` <span style="font-size:10px;color:var(--info)">(troca p/ ${r.origName||'?'})</span>`:''}</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:1px">${timeStr}${modelStr?' · '+modelStr:''}</div>
       </div>
-      <span style="font-size:11px;color:${color};font-weight:700">${r.status==='on'?'online':r.status==='next'?'aguardando':'encerrado'}</span>
+      <button onclick="toggleManualOnline('${r.c.id}',${!isOnline});renderTurnoDay();"
+        style="padding:6px 14px;border-radius:20px;border:none;cursor:pointer;font-size:12px;font-weight:700;
+        background:${isOnline?'var(--ok)':'var(--bg-soft)'};
+        color:${isOnline?'#fff':'var(--text3)'};
+        border:1.5px solid ${isOnline?'var(--ok)':'var(--line)'};
+        transition:all .15s">
+        ${isOnline?'● online':'○ off'}
+      </button>
     </div>`;
   };
 
@@ -1575,6 +1584,11 @@ function renderTurnoWeek(){
       ${rows}
     </div>`;
   }).join('');
+
+  // Add pencil button at bottom
+  el.innerHTML+= turnoEditMode
+    ? `<button onclick="toggleTurnoEditMode()" style="width:100%;margin-top:4px;padding:8px;background:var(--ok-soft);border:1px solid var(--ok);border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;color:var(--ok)">✅ Concluir edição</button>`
+    : `<button onclick="toggleTurnoEditMode()" style="width:100%;margin-top:4px;padding:8px;background:transparent;border:1px dashed var(--line);border-radius:8px;cursor:pointer;font-size:12px;color:var(--text3)">✏️ editar escala</button>`;
 }
 /* ===========================================================
    EDIT PUNCH — correct a check-in/out/overtime time that was
@@ -4566,27 +4580,31 @@ function renderChatAnalysisList(){
   const el=document.getElementById('chat-analysis-list');
   const sel=document.getElementById('chat-analysis-chatter');
   if(!el)return;
-  // Populate select
-  if(sel&&!sel.options.length)sel.innerHTML='<option value="">— selecionar chatter —</option>'+S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  // Always repopulate select
+  if(sel){
+    const cur=sel.value;
+    sel.innerHTML='<option value="">— selecionar chatter —</option>'+S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+    if(cur)sel.value=cur;
+  }
   const chatterId=sel?.value;
-  if(!chatterId){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Selecione um chatter</div>';return;}
+  if(!chatterId){el.innerHTML='<div style="color:var(--text3);font-size:12.5px;padding:8px 0">Selecione um chatter para ver as análises</div>';return;}
   const analyses=[];
-  Object.entries(S.chatAnalyses).forEach(([date,arr])=>{
+  Object.entries(S.chatAnalyses||{}).forEach(([date,arr])=>{
     (arr||[]).filter(a=>a.chatterId===chatterId).forEach(a=>analyses.push({...a,date}));
   });
   analyses.sort((a,b)=>b.date.localeCompare(a.date));
-  if(!analyses.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Nenhuma análise para este chatter</div>';return;}
-  el.innerHTML=analyses.slice(0,5).map(a=>`
+  if(!analyses.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px;padding:8px 0">Nenhuma análise para este chatter ainda</div>';return;}
+  el.innerHTML=analyses.slice(0,10).map(a=>`
     <div style="background:var(--bg-soft);border-radius:9px;padding:10px;margin-bottom:8px">
       <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:7px">${a.date}</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px">
-        ${CHAT_METRICS.map(m=>`<div style="text-align:center;background:var(--bg);border-radius:7px;padding:6px 4px">
-          <div style="font-size:10px;color:var(--text3)">${CHAT_METRIC_LABELS[m]}</div>
-          <div style="font-size:18px;font-weight:800;color:${a[m]>=4?'var(--ok)':a[m]>=3?'var(--warn)':'var(--bad)'}">${a[m]||'—'}</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:8px">
+        ${CHAT_METRICS.map(m=>`<div style="text-align:center;background:var(--bg);border-radius:7px;padding:5px 3px">
+          <div style="font-size:9px;color:var(--text3)">${CHAT_METRIC_LABELS[m]}</div>
+          <div style="font-size:17px;font-weight:800;color:${(a[m]||0)>=4?'var(--ok)':(a[m]||0)>=3?'var(--warn)':'var(--bad)'}">${a[m]||'—'}</div>
         </div>`).join('')}
       </div>
-      ${a.fortes?`<div style="font-size:12px"><strong>✅</strong> ${a.fortes}</div>`:''}
-      ${a.fracos?`<div style="font-size:12px;margin-top:4px"><strong>⚠️</strong> ${a.fracos}</div>`:''}
+      ${a.fortes?`<div style="font-size:12px;margin-bottom:4px"><strong style="color:var(--ok)">✅</strong> ${a.fortes}</div>`:''}
+      ${a.fracos?`<div style="font-size:12px"><strong style="color:var(--warn)">⚠️</strong> ${a.fracos}</div>`:''}
     </div>`).join('');
 }
 
@@ -5196,8 +5214,6 @@ let turnoEditMode=false;
 function toggleTurnoEditMode(){
   turnoEditMode=!turnoEditMode;
   renderTurnoWeek();
-  const btn=document.querySelector('[onclick="toggleTurnoEditMode()"]');
-  if(btn)btn.textContent=turnoEditMode?'✅ Concluir edição':'✏️ Editar escala completa';
-  if(turnoEditMode)toast('Modo edição ativo — clique nos turnos para editar ou ✕ para remover');
+  if(turnoEditMode)toast('Modo edição ativo — ✏️ editar ou ✕ remover');
 }
 
