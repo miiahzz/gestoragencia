@@ -799,10 +799,7 @@ function getSmartAlerts(){
   const goals=S.chatterWeekGoals[wkey]||{};
   const daysLeft=getDaysRemainingInWeek();
 
-  S.chatters.forEach(c=>{
-    const id=c.id;
-
-    // --- PERFORMANCE ---
+  S.chatters.filter(c=>c.time!=='elite').forEach(c=>{
     const target=parseFloat(goals[id])||0;
     const current=getChatterWeekRevenue(id);
 
@@ -1312,9 +1309,74 @@ function toggleNextTurno(){
 }
 
 function renderTurno(){
+  renderTurnoQuickEditor();
   renderTurnoDay();
   renderTurnoWeek();
   renderAbsenceListWithJustificativa();
+}
+
+function renderTurnoQuickEditor(){
+  const el=document.getElementById('turno-quick-editor');
+  if(!el)return;
+
+  if(!S.models.length&&!S.chatters.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:13px">Cadastre modelos e chatters primeiro</div>';
+    return;
+  }
+
+  // Group existing shifts by model for display
+  const DAY_KEYS=['seg','ter','qua','qui','sex','sab','dom'];
+  const DAY_LABEL={seg:'Seg',ter:'Ter',qua:'Qua',qui:'Qui',sex:'Sex',sab:'Sáb',dom:'Dom'};
+
+  if(!S.shifts.length){
+    el.innerHTML=`<div style="color:var(--text3);font-size:13px;padding:8px 0">
+      Nenhum turno configurado ainda.<br>
+      <button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="openModal('m-shift')">+ Adicionar primeiro turno</button>
+    </div>`;
+    return;
+  }
+
+  // Show shifts grouped by model with inline edit/delete
+  const modelGroups={};
+  S.models.forEach(m=>modelGroups[m.id]={model:m,shifts:[]});
+  modelGroups['_']={model:null,shifts:[]};
+  S.shifts.forEach(s=>{
+    const mids=s.modelIds&&s.modelIds.length?s.modelIds:['_'];
+    mids.forEach(mid=>{
+      const key=S.models.find(m=>m.id===mid)?mid:'_';
+      if(!modelGroups[key])modelGroups[key]={model:null,shifts:[]};
+      if(!modelGroups[key].shifts.find(x=>x.id===s.id))
+        modelGroups[key].shifts.push(s);
+    });
+  });
+
+  el.innerHTML=Object.values(modelGroups).filter(g=>g.shifts.length).map(g=>{
+    const m=g.model;
+    const sorted=[...g.shifts].sort((a,b)=>{
+      const toM=t=>{if(!t)return 9999;const[h,mn]=t.split(':').map(Number);return h<7?h*60+mn+1440:h*60+mn;};
+      return toM(a.start)-toM(b.start);
+    });
+    return`<div style="margin-bottom:12px">
+      <div style="font-size:13px;font-weight:800;margin-bottom:6px">${m?`${m.emoji||'🧩'} ${m.name}`:'Sem modelo'}</div>
+      ${sorted.map(s=>{
+        const c=S.chatters.find(ch=>ch.id===s.chatterId);
+        const days=(s.days||[]).map(d=>DAY_LABEL[d]).join(' ');
+        const t2=s.start2&&s.end2?` + ${s.start2}–${s.end2}`:'';
+        const folga=s.folgaDia?` · folga ${DAY_LABEL[s.folgaDia]||s.folgaDia}`:'';
+        return`<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-soft);border-radius:8px;margin-bottom:5px">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:13.5px">${c?c.name:'— vago'}</div>
+            <div style="font-size:11.5px;color:var(--text2);margin-top:1px">
+              <span style="font-family:var(--font-mono);color:var(--warn)">${s.start}–${s.end}${t2}</span>
+              ${days?` · ${days}`:''}${folga}
+            </div>
+          </div>
+          <button onclick="openEditShiftFromProfile('${s.id}','${s.chatterId}')" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px;font-family:var(--font-display)">✏️ editar</button>
+          <button onclick="deleteShift('${s.id}')" style="background:none;border:none;color:var(--bad);cursor:pointer;font-size:15px;padding:0 4px">✕</button>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('')+`<button class="btn btn-ghost btn-block btn-sm" style="margin-top:4px" onclick="openModal('m-shift')">+ adicionar turno</button>`;
 }
 
 function renderTurnoDay(){
@@ -2309,9 +2371,21 @@ function renderReport_Weekly(){
         <div class="reprow"><div class="replb">Cargo / Nível</div><div class="repval">${c.level}</div></div>
         <div class="reprow"><div class="replb">Modelo(s)</div><div class="repval">${modelsWorked.length?modelsWorked.join(', '):'—'}</div></div>
         <div class="reprow"><div class="replb">Faturamento semanal</div><div class="repval">${money(rev)}${pct!==null?` <span style="font-size:11px;color:${pct>=100?'var(--ok)':'var(--warn)'}">(${pct}% da meta)</span>`:''}</div></div>
-        ${extra>0?`<div class="reprow"><div class="replb">⚡ Hora extra</div><div class="repval" style="color:var(--info)">${money(extra)} <span style="font-size:10px;color:var(--text3)">(não conta na meta)</span></div></div>`:''}
+        ${extra>0?`<div class="reprow"><div class="replb">⚡ Hora extra</div><div class="repval" style="color:var(--info)">${money(extra)}</div></div>`:''}
         ${extra>0?`<div class="reprow"><div class="replb">Total (incl. extra)</div><div class="repval" style="font-weight:800">${money(revTotal)}</div></div>`:''}
         <div class="reprow"><div class="replb">Média diária</div><div class="repval">${money(avg)}</div></div>
+        ${(()=>{
+          const f=S.chatterFichas[c.id];const aw=f?.analytics?.weeklyData||{};
+          const wks=wd.map(d=>fmt(d)).filter(dk=>aw[dk]);
+          if(!wks.length)return'';
+          let tkt=0,vph=0,htp=0,days=0,maxG=0;
+          wks.forEach(dk=>{const a=aw[dk];if(a.ticketMedio>0){tkt+=a.ticketMedio;vph+=a.vendasPorHora||0;htp+=a.highTicketPct||0;days++;}if((a.maxGapMin||0)>maxG)maxG=a.maxGapMin||0;});
+          const at=days>0?tkt/days:0,av=days>0?Math.round(vph/days*100)/100:0,ah=days>0?Math.round(htp/days):0;
+          return`<div class="reprow"><div class="replb">Ticket médio</div><div class="repval">${money(at)}</div></div>
+          <div class="reprow"><div class="replb">Valor/hora</div><div class="repval" style="color:${av>=20?'var(--ok)':av>=10?'var(--warn)':'var(--bad)'}">${money(av)}/h</div></div>
+          <div class="reprow"><div class="replb">% High ticket</div><div class="repval" style="color:${ah>=30?'var(--ok)':ah>=15?'var(--warn)':'var(--bad)'}">${ah}%</div></div>
+          ${maxG>0?`<div class="reprow"><div class="replb">Maior gap sem venda</div><div class="repval" style="color:${maxG>60?'var(--bad)':maxG>30?'var(--warn)':'var(--ok)'}">${maxG}min</div></div>`:''}`;
+        })()}
         <div class="reprow"><div class="replb">Ocorrências</div><div class="repval">${weekAbs.length?weekAbs.map(a=>({falta:'Falta',atraso:'Atraso',saida_antecipada:'Saída antecip.'})[a.type]||a.type).join(', '):'Nenhuma'}</div></div>
         <div class="field" style="margin-top:8px"><label class="flabel">Principal erro</label><input class="finput" id="rpt-erro-${c.id}" value="${getReportDraft('erro-'+c.id)}" placeholder="Descreva o erro principal..."></div>
         <div class="field"><label class="flabel">Ação tomada</label><input class="finput" id="rpt-acao-${c.id}" value="${getReportDraft('acao-'+c.id)}" placeholder="O que você fez a respeito..."></div>
@@ -2618,55 +2692,119 @@ function renderModelsList(){
 }
 function renderRevenueTable(){
   const el=document.getElementById('revenue-table');
+  if(!el)return;
   if(!S.models.length){el.innerHTML='<div class="empty"><div class="empty-tx">Cadastre modelos para lançar faturamento</div></div>';return;}
-  const dateKey=selectedFatDate;
-  const isToday=dateKey===todayKey();
-
-  // For selected date: show chatters who worked OR have revenue on that day
-  // Plus all chatters (so you can edit any day freely)
-  const workedIds=new Set(getChattersThatWorkedOn(dateKey));
-  // Always show everyone when editing a past date
-  let activeChatters=isToday
-    ?S.chatters.filter(c=>workedIds.has(c.id))
-    :S.chatters; // show all chatters for past days
-  const restChatters=isToday?S.chatters.filter(c=>!workedIds.has(c.id)):[];
-
   if(!S.chatters.length){el.innerHTML='<div class="empty"><div class="empty-tx">Cadastre chatters para lançar faturamento</div></div>';return;}
+  const dateKey=selectedFatDate;
+
+  // Show all chatters — always. For past dates show everyone, for today show scheduled + those with revenue
+  const allChatters=S.chatters.filter(c=>c.time!=='elite');
+
+  // Check if any data exists for this date (from reports or manual)
+  const hasReportData=allChatters.some(c=>S.models.some(m=>(parseFloat(S.revenues[`${c.id}_${m.id}_${dateKey}`])||0)>0));
 
   let html='';
-  if(!activeChatters.length&&isToday){
-    html+='<div class="empty" style="padding:18px"><div class="empty-tx">Nenhum chatter escalado ou com entrada hoje.<br>Marque entrada na aba Turno ou use "+ adicionar".</div></div>';
-  } else {
-    html+=`<div style="overflow-x:auto"><table class="rtable"><thead><tr><th>Chatter</th>${S.models.map(m=>`<th style="text-align:right">${m.emoji} ${m.name}</th>`).join('')}<th style="text-align:right;color:var(--ok)">Total</th></tr></thead><tbody>`;
-    activeChatters.forEach(c=>{
-      let rt=0;
-      const cells=S.models.map(m=>{
-        const key=`${c.id}_${m.id}_${dateKey}`;
-        const val=S.revenues[key]||'';
-        rt+=parseFloat(val)||0;
-        return`<td style="text-align:right"><input type="number" class="rinput" value="${val}" placeholder="—" oninput="saveRevenue('${c.id}','${m.id}',this.value,'${dateKey}')"></td>`;
-      }).join('');
-      html+=`<tr><td><div style="font-weight:700;font-size:13px">${c.name}</div></td>${cells}<td style="text-align:right;font-family:var(--font-mono);font-weight:800;color:var(--ok)">${moneyShort(rt)}</td></tr>`;
-    });
-    html+='<tr class="rtotalrow"><td>TOTAL</td>';
-    S.models.forEach(m=>{let ct=0;activeChatters.forEach(c=>{ct+=parseFloat(S.revenues[`${c.id}_${m.id}_${dateKey}`])||0;});html+=`<td style="text-align:right">${moneyShort(ct)}</td>`;});
-    const activeTotal=activeChatters.reduce((sum,c)=>sum+S.models.reduce((s2,m)=>s2+(parseFloat(S.revenues[`${c.id}_${m.id}_${dateKey}`])||0),0),0);
-    html+=`<td style="text-align:right">${moneyShort(activeTotal)}</td></tr></tbody></table></div>`;
-  }
 
-  if(restChatters.length){
-    html+=`<div style="margin-top:12px">
-      <button class="btn btn-line btn-sm btn-block" onclick="toggleRestChatters()">+ adicionar lançamento de outro chatter (${restChatters.length} não escalado${restChatters.length>1?'s':''} hoje)</button>
-      <div id="rest-chatters-panel" style="display:none;margin-top:8px">
-        ${restChatters.map(c=>`<button class="chip" style="margin:3px" onclick="forceAddToday('${c.id}')">+ ${c.name}</button>`).join('')}
-      </div>
+  // Table header
+  html+=`<div style="overflow-x:auto"><table class="rtable">
+    <thead><tr>
+      <th>Chatter</th>
+      ${S.models.map(m=>`<th style="text-align:right">${m.emoji||'🧩'} ${m.name}</th>`).join('')}
+      <th style="text-align:right;color:var(--ok)">Total</th>
+    </tr></thead><tbody>`;
+
+  let dayTotal=0;
+  allChatters.forEach(c=>{
+    let rowTotal=0;
+    const cells=S.models.map(m=>{
+      const key=`${c.id}_${m.id}_${dateKey}`;
+      const val=parseFloat(S.revenues[key])||0;
+      rowTotal+=val;
+      return`<td style="text-align:right">
+        <input type="number" class="rinput" value="${val||''}" placeholder="—"
+          oninput="saveRevenue('${c.id}','${m.id}',this.value,'${dateKey}')">
+      </td>`;
+    }).join('');
+    dayTotal+=rowTotal;
+    const rowColor=rowTotal>0?'':'opacity:0.5';
+    html+=`<tr style="${rowColor}">
+      <td><div style="font-weight:700;font-size:13px">${c.name}</div></td>
+      ${cells}
+      <td style="text-align:right;font-family:var(--font-mono);font-weight:800;color:${rowTotal>0?'var(--ok)':'var(--text3)'}">
+        ${rowTotal>0?money(rowTotal):'—'}
+      </td>
+    </tr>`;
+  });
+
+  // Total row
+  html+='<tr class="rtotalrow"><td><strong>TOTAL DIA</strong></td>';
+  S.models.forEach(m=>{
+    let ct=0;allChatters.forEach(c=>{ct+=parseFloat(S.revenues[`${c.id}_${m.id}_${dateKey}`])||0;});
+    html+=`<td style="text-align:right;font-family:var(--font-mono)">${ct>0?money(ct):'—'}</td>`;
+  });
+  html+=`<td style="text-align:right;font-family:var(--font-mono);font-weight:800;color:var(--ok)">${dayTotal>0?money(dayTotal):'—'}</td>`;
+  html+='</tr></tbody></table></div>';
+
+  // Substitute report button — appears when data exists for this date
+  if(hasReportData){
+    html+=`<div style="margin-top:10px">
+      <button class="btn btn-ghost btn-sm btn-block" onclick="openSubstituteReport('${dateKey}')"
+        style="border-color:var(--warn);color:var(--warn)">
+        🔄 Substituir relatório de ${dateKey}
+      </button>
     </div>`;
   }
 
   el.innerHTML=html;
 }
+function openSubstituteReport(dateKey){
+  // Pre-fill the substitute modal with the date
+  const el=document.getElementById('substitute-report-input');
+  const dateLb=document.getElementById('substitute-report-date');
+  if(dateLb)dateLb.textContent=dateKey;
+  if(el)el.value='';
+  openModal('m-substitute-report');
+}
+
+function processSubstituteReport(){
+  const dateEl=document.getElementById('substitute-report-date');
+  const inputEl=document.getElementById('substitute-report-input');
+  if(!inputEl?.value.trim()){toast('⚠️ Cole o relatório antes de substituir');return;}
+
+  const dateKey=dateEl?.textContent||selectedFatDate;
+
+  // 1. Clear all existing revenue for this date
+  S.chatters.forEach(c=>{
+    S.models.forEach(m=>{
+      delete S.revenues[`${c.id}_${m.id}_${dateKey}`];
+    });
+  });
+  // Clear hora extra for this date
+  Object.keys(S.horaExtraSlots).forEach(wk=>{
+    S.horaExtraSlots[wk]=(S.horaExtraSlots[wk]||[]).filter(x=>x.dateKey!==dateKey);
+  });
+  // Clear analytics for this date
+  S.chatters.forEach(c=>{
+    const f=S.chatterFichas[c.id];
+    if(f?.analytics?.weeklyData)delete f.analytics.weeklyData[dateKey];
+  });
+
+  // 2. Re-parse using the new report content
+  // Temporarily replace the teamreport-input value and process
+  const originalInput=document.getElementById('teamreport-input');
+  const originalValue=originalInput?.value||'';
+  if(originalInput)originalInput.value=inputEl.value;
+
+  parseTeamReports();
+
+  if(originalInput)originalInput.value=originalValue;
+
+  closeModal('m-substitute-report');
+  toast(`✅ Relatório de ${dateKey} substituído com sucesso!`,4000);
+  renderFat();
+}
+
 function toggleRestChatters(){
-  const p=document.getElementById('rest-chatters-panel');
   if(p)p.style.display=p.style.display==='none'?'block':'none';
 }
 function forceAddToday(chatterId){
@@ -2731,7 +2869,7 @@ function renderDailyByModel(){
   S.models.forEach(m=>{
     let rowTotal=0;
     const cells=wd.map(d=>{
-      let v=0;S.chatters.forEach(c=>{v+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(wdate)}`])||0;});
+      let v=0;S.chatters.forEach(c=>{v+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(d)}`])||0;});
       rowTotal+=v;
       return`<td style="text-align:right;font-family:var(--font-mono);font-size:11.5px">${v>0?v.toLocaleString('pt-BR',{maximumFractionDigits:0}):'—'}</td>`;
     }).join('');
@@ -2739,7 +2877,7 @@ function renderDailyByModel(){
   });
   html+='<tr class="rtotalrow"><td>TOTAL</td>';
   wd.forEach(d=>{
-    let dayTotal=0;S.chatters.forEach(c=>S.models.forEach(m=>{dayTotal+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(wdate)}`])||0;}));
+    let dayTotal=0;S.chatters.forEach(c=>S.models.forEach(m=>{dayTotal+=parseFloat(S.revenues[`${c.id}_${m.id}_${fmt(d)}`])||0;}));
     html+=`<td style="text-align:right;font-size:11.5px">${dayTotal>0?dayTotal.toLocaleString('pt-BR',{maximumFractionDigits:0}):'—'}</td>`;
   });
   html+=`<td style="text-align:right">${moneyShort(getWeekTotalRevenue())}</td></tr></tbody></table></div>`;
@@ -2755,12 +2893,10 @@ function renderDailyByChatter(){
   if(!el)return;
   if(!S.models.length){el.innerHTML='<div class="empty"><div class="empty-tx">Cadastre modelos para ver o diário</div></div>';return;}
 
-  const today=todayKey();
-  const todayDayKey=getTodayDayKey();
+  const dateKey=selectedFatDate||todayKey();
 
-  // Build model -> chatters map from shifts (chatter linked to model via shift.modelIds)
-  // A chatter can work multiple models but show under each one they're assigned to
-  const modelChatters={}; // modelId -> Set of chatterIds
+  // Build model -> chatters map from shifts
+  const modelChatters={};
   S.models.forEach(m=>{ modelChatters[m.id]=new Set(); });
   S.shifts.forEach(s=>{
     (s.modelIds||[]).forEach(mid=>{
@@ -2772,9 +2908,9 @@ function renderDailyByChatter(){
 
   S.models.forEach(m=>{
     const chatterIds=[...modelChatters[m.id]];
-    // Also include chatters who have revenue for this model today even if not in shift
+    // Also include chatters who have revenue for this model on the selected date
     S.chatters.forEach(c=>{
-      const rev=parseFloat(S.revenues[`${c.id}_${m.id}_${today}`])||0;
+      const rev=parseFloat(S.revenues[`${c.id}_${m.id}_${dateKey}`])||0;
       if(rev>0)chatterIds.push(c.id);
     });
     const uniqueIds=[...new Set(chatterIds)];
@@ -2783,7 +2919,7 @@ function renderDailyByChatter(){
     const chattersData=uniqueIds.map(cid=>{
       const c=S.chatters.find(ch=>ch.id===cid);
       if(!c)return null;
-      const rev=parseFloat(S.revenues[`${c.id}_${m.id}_${today}`])||0;
+      const rev=parseFloat(S.revenues[`${c.id}_${m.id}_${dateKey}`])||0;
       return{c,rev};
     }).filter(Boolean).sort((a,b)=>b.rev-a.rev);
 
@@ -2800,7 +2936,7 @@ function renderDailyByChatter(){
           <div style="display:flex;align-items:center;gap:8px">
             <input type="number" class="finput" style="width:90px;text-align:right;padding:5px 8px;font-size:13px;font-family:var(--font-mono)"
               value="${rev||''}" placeholder="0"
-              oninput="saveRevenue('${c.id}','${m.id}',this.value)">
+              oninput="saveRevenue('${c.id}','${m.id}',this.value,'${dateKey}')">
           </div>
         </div>`).join('')}
     </div>`;
@@ -3191,7 +3327,8 @@ function parseTeamReports(){
 
   const resultsHtml=blocks.map(block=>{
     const chatter=S.chatters.find(c=>c.name.toLowerCase()===block.name.toLowerCase())||
-      S.chatters.find(c=>block.name.toLowerCase().includes(c.name.toLowerCase().split(' ')[0]));
+      S.chatters.find(c=>block.name.toLowerCase().includes(c.name.toLowerCase().split(' ')[0]))||
+      S.chatters.find(c=>c.name.toLowerCase().includes(block.name.toLowerCase().split(' ')[0]));
 
     let dateKey=todayKey();
     if(block.dateRaw){
@@ -3246,7 +3383,7 @@ function parseTeamReports(){
       }
     });
     if(!shiftHours)shiftHours=8; // fallback if no shift window found
-    const vendasPorHora=shiftHours>0?Math.round((normalSales.length/shiftHours)*100)/100:0;
+    const vendasPorHora=shiftHours>0?Math.round((chatterTotal/shiftHours)*100)/100:0; // R$/hora
 
     // Tempo máximo sem venda (gap between sale times)
     let maxGapMin=0;
@@ -3271,9 +3408,9 @@ function parseTeamReports(){
       a.weeklyData[dateKey]={ticketMedio,vendasPorHora,highTicketPct,maxGapMin,totalVendas:normalSales.length,chatterTotal,extraTotal,shiftHours};
       // Auto-fill ficha técnica from analytics
       const f=S.chatterFichas[chatter.id];
-      // Vendas/hora: 0.3=regular, 0.5=bom, 0.8=ótimo, 1+=excelente
+      // Valor/hora: 0.3=regular, 0.5=bom, 0.8=ótimo, 1+=excelente
       const scoreLabel=n=>n>=5?'5 - Excelente':n>=4?'4 - Ótimo':n>=3?'3 - Bom':n>=2?'2 - Regular':'1 - Fraco';
-      const convScore=vendasPorHora>=1?5:vendasPorHora>=0.8?4:vendasPorHora>=0.5?3:vendasPorHora>=0.3?2:1;
+      const convScore=vendasPorHora>=30?5:vendasPorHora>=20?4:vendasPorHora>=10?3:vendasPorHora>=5?2:1; // R$/hora scale
       const ticketScore=ticketMedio>=150?5:ticketMedio>=80?4:ticketMedio>=40?3:ticketMedio>=20?2:1;
       f.tech.conversao=scoreLabel(convScore);
       f.tech.ticket=scoreLabel(ticketScore);
@@ -3288,16 +3425,21 @@ function parseTeamReports(){
 
     exportLines.push(`👤 ${block.name}${block.dateRaw?' ('+block.dateRaw+')':''}`);
     modelResults.filter(mr=>!mr.isExtra).forEach(mr=>exportLines.push(`  ${mr.name}: ${money(mr.total)}`));
-    if(chatterTotal>0)exportLines.push(`  Total: ${money(chatterTotal)} | Ticket médio: ${money(ticketMedio)} | High ticket: ${highTicketPct}% | Vendas/hora: ${vendasPorHora}`);
+    if(chatterTotal>0)exportLines.push(`  Total: ${money(chatterTotal)} | Ticket médio: ${money(ticketMedio)} | High ticket: ${highTicketPct}% | Valor/hora: ${vendasPorHora}`);
     if(extraTotal>0)exportLines.push(`  ⚡ Hora extra: ${money(extraTotal)}`);
     if(meta>0)exportLines.push(`  Meta: ${money(meta)} | Atingido: ${money(weekRev)} (${pct}%)${falta>0?` | Falta: ${money(falta)}`:' ✅'}`);
     exportLines.push('');
 
-    const matchColor=chatter?'var(--ok)':'var(--warn)';
+    const matchColor=chatter?'var(--ok)':'var(--bad)';
+    const notFoundMsg=!chatter?`<div style="background:#fff0f0;border-radius:7px;padding:8px 10px;margin-bottom:8px;font-size:12px;color:var(--bad)">
+      ❌ "${block.name}" não encontrado na aba Equipe.<br>
+      <strong>Chatters cadastrados:</strong> ${S.chatters.map(c=>c.name).join(', ')||'nenhum'}.<br>
+      O nome no relatório precisa ser igual ao cadastrado.
+    </div>`:'';
     return`<div style="background:var(--bg-soft);border-radius:10px;padding:13px;margin-bottom:10px;border-left:3px solid ${matchColor}">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <div>
-          <div style="font-weight:700;font-size:14px">${block.name}${chatter?'':' <span style="color:var(--warn);font-size:11px">⚠️ não encontrado</span>'}</div>
+          <div style="font-weight:700;font-size:14px">${block.name} ${chatter?'<span style="color:var(--ok);font-size:11px">✅ vinculado</span>':'<span style="color:var(--bad);font-size:11px">❌ não encontrado</span>'}</div>
           <div style="font-size:11.5px;color:var(--text3)">${block.dateRaw||dateKey}</div>
         </div>
         <div style="text-align:right">
@@ -3305,11 +3447,13 @@ function parseTeamReports(){
           ${extraTotal>0?`<div style="font-size:12px;color:var(--info)">⚡ ${money(extraTotal)}</div>`:''}
         </div>
       </div>
+      ${notFoundMsg}
       ${modelResults.filter(mr=>!mr.isExtra).map(mr=>`
         <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12.5px;border-bottom:1px solid var(--line)">
-          <span>${mr.name}</span><span style="font-family:var(--font-mono)">${money(mr.total)}</span>
+          <span style="color:${mr.matched?'var(--text)':'var(--warn)'}">${mr.name}${!mr.matched?' ⚠️':''}</span>
+          <span style="font-family:var(--font-mono);font-weight:700">${money(mr.total)}</span>
         </div>`).join('')}
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:10px">
+      ${chatter&&chatterTotal>0?`<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-top:10px">
         <div style="background:var(--bg);border-radius:7px;padding:7px;text-align:center">
           <div style="font-size:10px;color:var(--text3)">Ticket médio</div>
           <div style="font-size:13px;font-weight:700;font-family:var(--font-mono)">${money(ticketMedio)}</div>
@@ -3319,8 +3463,8 @@ function parseTeamReports(){
           <div style="font-size:13px;font-weight:700;color:${highTicketPct>=30?'var(--ok)':'var(--warn)'}">${highTicketPct}%</div>
         </div>
         <div style="background:var(--bg);border-radius:7px;padding:7px;text-align:center">
-          <div style="font-size:10px;color:var(--text3)">Vendas/hora</div>
-          <div style="font-size:13px;font-weight:700;color:${vendasPorHora>=1?'var(--ok)':vendasPorHora>=0.5?'var(--warn)':'var(--bad)'}">${vendasPorHora}</div>
+          <div style="font-size:10px;color:var(--text3)">Valor/hora</div>
+          <div style="font-size:13px;font-weight:700;color:${vendasPorHora>=20?'var(--ok)':vendasPorHora>=10?'var(--warn)':'var(--bad)'}">${money(vendasPorHora)}/h</div>
         </div>
         <div style="background:var(--bg);border-radius:7px;padding:7px;text-align:center">
           <div style="font-size:10px;color:var(--text3)">Maior gap</div>
@@ -3332,27 +3476,29 @@ function parseTeamReports(){
           <div style="height:6px;border-radius:4px;background:${pct>=100?'var(--ok)':pct>=60?'var(--warn)':'var(--bad)'};width:${Math.min(100,pct||0)}%"></div>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3)">
-          <span>${pct}% da meta</span>${falta>0?`<span style="color:var(--bad)">falta ${money(falta)}</span>`:`<span style="color:var(--ok)">✅ batida!</span>`}
+          <span>${pct}% da meta semanal (${money(weekRev)} / ${money(meta)})</span>
+          ${falta>0?`<span style="color:var(--bad)">falta ${money(falta)}</span>`:`<span style="color:var(--ok)">✅ batida!</span>`}
         </div>
-      </div>`:''}
+      </div>`:''}`:''}
     </div>`;
   }).join('');
 
   save();
 
-  // Re-render all views that depend on the parsed data
-  renderMetaProgress();
-  renderExtraProgress();
-  renderDailyByChatter();
-  renderDailyByModel();
-  renderReport('week');
-  renderChatterGoals();
-  renderEvolucao();
-  // If user is currently viewing fichas or faturamento, refresh those too
+  const safeRender=(fn,name)=>{try{fn();}catch(e){console.warn('renderError',name,e);}};
+  // Always re-render these (elements exist on all views)
+  safeRender(renderMetaProgress,'meta');
+  safeRender(renderExtraProgress,'extra');
+  safeRender(renderEvolucao,'evolucao');
+  safeRender(renderGestaoMissingReports,'missing-reports');
+  // Re-render current view fully
   const cv=currentViewName();
-  if(cv==='fichas')renderFichas();
-  if(cv==='fat')renderFat();
-  if(cv==='report')renderReport_Weekly();
+  safeRender(()=>renderView(cv),'current-view');
+  // Also refresh faturamento panels (may exist hidden)
+  safeRender(renderDailyByChatter,'daily-chatter');
+  safeRender(renderDailyByModel,'daily-model');
+  safeRender(renderSemanaRevenue,'semana-rev');
+  safeRender(renderSemanaDesenvolvimento,'semana-dev');
 
   exportLines.push(`TOTAL EQUIPE: ${money(totalEquipe)}`);
   document.getElementById('teamreport-results').innerHTML=
@@ -3771,8 +3917,8 @@ function renderFichaChatter(chatterId){
               <div style="font-size:12px;font-weight:700;font-family:var(--font-mono)">${moneyShort(a.ticketMedio||0)}</div>
             </div>
             <div style="text-align:center;background:var(--bg-soft);border-radius:6px;padding:5px">
-              <div style="font-size:9px;color:var(--text3)">Vendas/hora</div>
-              <div style="font-size:12px;font-weight:700;color:${(a.vendasPorHora||0)>=1?'var(--ok)':(a.vendasPorHora||0)>=0.5?'var(--warn)':'var(--bad)'}">${a.vendasPorHora||0}</div>
+              <div style="font-size:9px;color:var(--text3)">Valor/hora</div>
+              <div style="font-size:12px;font-weight:700;color:${(a.vendasPorHora||0)>=20?'var(--ok)':(a.vendasPorHora||0)>=10?'var(--warn)':'var(--bad)'}">${a.vendasPorHora||0}</div>
             </div>
           </div>
           ${a.highTicketPct>0||a.maxGapMin>0?`<div style="display:flex;gap:12px;margin-top:4px;font-size:11px;color:var(--text2)">
@@ -4427,8 +4573,8 @@ function renderSemanaDesenvolvimento(){
           <div style="font-size:14px;font-weight:800;font-family:var(--font-mono)">${money(avgTicket)}</div>
         </div>
         <div style="background:var(--bg-soft);border-radius:8px;padding:8px;text-align:center">
-          <div style="font-size:10px;color:var(--text3)">Vendas/hora</div>
-          <div style="font-size:14px;font-weight:800;color:${avgVPH>=1?'var(--ok)':avgVPH>=0.5?'var(--warn)':'var(--bad)'}">${avgVPH}</div>
+          <div style="font-size:10px;color:var(--text3)">Valor/hora</div>
+          <div style="font-size:14px;font-weight:800;color:${avgVPH>=20?'var(--ok)':avgVPH>=10?'var(--warn)':'var(--bad)'}">${avgVPH}</div>
         </div>
         <div style="background:var(--bg-soft);border-radius:8px;padding:8px;text-align:center">
           <div style="font-size:10px;color:var(--text3)">% High ticket</div>
@@ -4600,7 +4746,7 @@ function renderEvolucao(){
 
   if(!S.chatters.length){el.innerHTML=html+'<div style="color:var(--text3);font-size:13px">Cadastre chatters na aba Equipe</div>';return;}
 
-  const metricLabels={ticketMedio:'Ticket médio',vendasPorHora:'Vendas/hora',highTicketPct:'% High ticket'};
+  const metricLabels={ticketMedio:'Ticket médio',vendasPorHora:'Valor/hora',highTicketPct:'% High ticket'};
 
   S.chatters.forEach(c=>{
     const rev=getChatterWeekRevenueTotal(c.id);
@@ -4638,8 +4784,8 @@ function renderEvolucao(){
           ${evoPct?.ticketMedio!==undefined?`<div style="font-size:10px;color:${evoPct.ticketMedio>=0?'var(--ok)':'var(--bad)'}">${evoPct.ticketMedio>=0?'▲':'▼'}${Math.abs(evoPct.ticketMedio)}%</div>`:''}
         </div>
         <div style="background:var(--bg-soft);border-radius:7px;padding:6px;text-align:center">
-          <div style="font-size:9px;color:var(--text3)">Vendas/hora</div>
-          <div style="font-size:13px;font-weight:700;color:${avgVPH>=1?'var(--ok)':avgVPH>=0.5?'var(--warn)':'var(--bad)'}">${avgVPH}</div>
+          <div style="font-size:9px;color:var(--text3)">Valor/hora</div>
+          <div style="font-size:13px;font-weight:700;color:${avgVPH>=20?'var(--ok)':avgVPH>=10?'var(--warn)':'var(--bad)'}">${avgVPH}</div>
           ${evoPct?.vendasPorHora!==undefined?`<div style="font-size:10px;color:${evoPct.vendasPorHora>=0?'var(--ok)':'var(--bad)'}">${evoPct.vendasPorHora>=0?'▲':'▼'}${Math.abs(evoPct.vendasPorHora)}%</div>`:''}
         </div>
         <div style="background:var(--bg-soft);border-radius:7px;padding:6px;text-align:center">
@@ -4761,7 +4907,7 @@ function renderChatterAnalysis(){
     <div class="reprow"><div class="replb">Faturamento semana</div><div class="repval">${money(totalRev)}</div></div>
     <div class="reprow"><div class="replb">Ticket médio (semana)</div><div class="repval">${money(ticketMedioSemana)}</div></div>
     <div class="reprow"><div class="replb">% High ticket</div><div class="repval" style="color:${highPctSemana>=30?'var(--ok)':'var(--warn)'}">${highPctSemana}%</div></div>
-    <div class="reprow"><div class="replb">Vendas/hora (média)</div><div class="repval" style="color:${vphSemana>=1?'var(--ok)':vphSemana>=0.5?'var(--warn)':'var(--bad)'}">${vphSemana}</div></div>
+    <div class="reprow"><div class="replb">Valor/hora (média)</div><div class="repval" style="color:${vphSemana>=1?'var(--ok)':vphSemana>=0.5?'var(--warn)':'var(--bad)'}">${vphSemana}</div></div>
     <div class="reprow"><div class="replb">Maior tempo sem venda</div><div class="repval" style="color:${totalGap>60?'var(--bad)':totalGap>30?'var(--warn)':'var(--ok)'}">${totalGap?totalGap+'min':'—'}</div></div>
     ${extraTot>0?`<div class="reprow"><div class="replb">Hora extra (semana)</div><div class="repval" style="color:var(--info)">⚡ ${money(extraTot)}</div></div>`:''}
     <div class="reprow"><div class="replb">Dias analisados</div><div class="repval">${daysCount}</div></div>

@@ -447,11 +447,19 @@ body{
   <div class="eyebrow">escala</div>
   <div class="view-title">Turno</div>
 
+  <!-- EDITOR RÁPIDO DE ESCALA -->
+  <div class="panel" style="border:2px solid var(--accent)">
+    <div class="panel-head">
+      <div><div class="panel-title" style="color:var(--accent)">⚡ Editar escala</div><div class="panel-note">Configure quem trabalha em cada modelo</div></div>
+      <button class="btn btn-primary btn-xs" onclick="openModal('m-shift')">+ novo turno</button>
+    </div>
+    <div id="turno-quick-editor"></div>
+  </div>
+
   <!-- ESCALA DO DIA -->
   <div class="panel">
     <div class="panel-head">
       <div><div class="panel-title" id="turno-day-title">Hoje</div></div>
-      <button class="btn btn-primary btn-xs" onclick="openModal('m-shift')">+ adicionar</button>
     </div>
     <div id="turno-day-list"></div>
   </div>
@@ -926,6 +934,23 @@ body{
 
 <!-- ===================================================== MODALS ===================================================== -->
 
+
+<!-- SUBSTITUTE REPORT MODAL -->
+<div class="modalbg" id="m-substitute-report"><div class="modal">
+  <div class="modal-handle"></div>
+  <div class="modal-title">🔄 Substituir relatório</div>
+  <div style="font-size:13px;color:var(--warn);background:var(--warn-soft);border-radius:8px;padding:10px;margin-bottom:12px">
+    ⚠️ Isso vai apagar todos os dados do dia <strong id="substitute-report-date"></strong> e substituir pelo novo relatório.
+  </div>
+  <div class="field">
+    <label class="flabel">Cole o novo relatório completo</label>
+    <textarea class="ftext" id="substitute-report-input" style="min-height:200px;font-family:var(--font-mono);font-size:12px" placeholder="Data: DD/MM/AAAA&#10;Nome: ...&#10;MODELO&#10;HH:MM às HH:MM&#10;..."></textarea>
+  </div>
+  <div class="modalbtns">
+    <button class="btn btn-ghost btn-block" onclick="closeModal('m-substitute-report')">Cancelar</button>
+    <button class="btn btn-primary btn-block" style="background:var(--warn)" onclick="processSubstituteReport()">🔄 Substituir</button>
+  </div>
+</div></div>
 
 <!-- MANAGER PROFILE MODAL -->
 <div class="modalbg" id="m-manager-profile"><div class="modal">
