@@ -485,25 +485,42 @@ body{
 <section class="view" id="v-semana">
   <div class="eyebrow">planejamento</div>
   <div class="view-title">Semana <span id="semana-range" style="color:var(--text3);font-weight:400;font-size:15px"></span></div>
-  <div class="view-sub">Objetivos e metas gerais da equipe para esta semana.</div>
 
   <div class="panel">
     <div class="panel-head">
-      <div><div class="panel-title">Objetivos da semana</div><div class="panel-note">Metas gerais do time — atualize o progresso conforme avança</div></div>
+      <div><div class="panel-title">Objetivos da semana</div></div>
       <button class="btn btn-primary btn-xs" onclick="openModal('m-goal')">+ objetivo</button>
     </div>
     <div id="goals-list"></div>
   </div>
 
   <div class="panel">
-    <div class="panel-head"><div class="panel-title">Notas de planejamento</div></div>
-    <textarea class="ftext" id="week-notes" placeholder="Prioridades, riscos, observações da semana..." style="min-height:88px"></textarea>
-    <button class="btn btn-primary btn-sm" style="margin-top:9px" onclick="saveWeekNotes()">Salvar</button>
+    <div class="panel-head"><div class="panel-title">Faturamento da semana</div></div>
+    <div id="semana-revenue-preview"></div>
+  </div>
+
+  <!-- DESENVOLVIMENTO POR CHATTER -->
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">📊 Desenvolvimento da equipe</div><div class="panel-note">Dados dos relatórios desta semana</div></div>
+      <button class="btn btn-soft btn-xs" onclick="renderSemanaDesenvolvimento()">↻</button>
+    </div>
+    <div id="semana-desenvolvimento"></div>
+  </div>
+
+  <!-- ANÁLISE SEMANAL GERADA -->
+  <div class="panel">
+    <div class="panel-head">
+      <div><div class="panel-title">🤖 Análise semanal</div><div class="panel-note">Gerada automaticamente dos dados</div></div>
+      <button class="btn btn-primary btn-xs" onclick="gerarAnaliseSemanal()">Gerar</button>
+    </div>
+    <div id="semana-analise"></div>
   </div>
 
   <div class="panel">
-    <div class="panel-head"><div class="panel-title">Faturamento da semana</div></div>
-    <div id="semana-revenue-preview"></div>
+    <div class="panel-head"><div class="panel-title">Notas de planejamento</div></div>
+    <textarea class="ftext" id="week-notes" placeholder="Prioridades, riscos, observações da semana..." style="min-height:88px"></textarea>
+    <button class="btn btn-primary btn-sm" style="margin-top:9px" onclick="saveWeekNotes()">Salvar</button>
   </div>
 </section>
 

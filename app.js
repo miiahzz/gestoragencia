@@ -553,9 +553,11 @@ function deleteTask(id){
 function renderSemana(){
   const wk=getWeekDates();
   document.getElementById('semana-range').textContent=`${wk[0].getDate()}/${wk[0].getMonth()+1} – ${wk[6].getDate()}/${wk[6].getMonth()+1}`;
-  document.getElementById('week-notes').value=S.weekNotes[getWeekKey()]||'';
+  const notesEl=document.getElementById('week-notes');
+  if(notesEl&&!notesEl.value)notesEl.value=S.weekNotes[getWeekKey()]||'';
   renderGoals();
   renderSemanaRevenue();
+  renderSemanaDesenvolvimento();
 }
 function renderGoals(){
   const el=document.getElementById('goals-list');
@@ -965,6 +967,29 @@ function getSmartAlerts(){
     });
   }
 
+  // --- MISSING REPORTS ALERT (past days this week without revenue) ---
+  const wd2=getWeekDates();
+  const missingByChatter={};
+  wd2.forEach(d=>{
+    const dk=fmt(d);
+    if(dk>=todayKey())return; // only past days
+    S.chatters.filter(c=>c.time!=='elite').forEach(c=>{
+      const hasRev=S.models.some(m=>(parseFloat(S.revenues[`${c.id}_${m.id}_${dk}`])||0)>0);
+      if(!hasRev){
+        if(!missingByChatter[c.id])missingByChatter[c.id]={c,dates:[]};
+        missingByChatter[c.id].dates.push(dk);
+      }
+    });
+  });
+  Object.values(missingByChatter).forEach(({c,dates})=>{
+    const alertId=`missing-report-${c.id}-${getWeekKey()}`;
+    alerts.push({id:alertId,type:'bad',icon:'📋',
+      title:`${c.name} sem relatório`,
+      body:`Sem faturamento em: ${dates.join(', ')}. Justifique abaixo se foi falta.`,
+      chatterId:c.id,priority:2,
+      justificativaKey:`just_${c.id}_${getWeekKey()}`});
+  });
+
   return alerts.sort((a,b)=>a.priority-b.priority);
 }
 function toggleAlertDone(alertId){
@@ -1289,7 +1314,7 @@ function toggleNextTurno(){
 function renderTurno(){
   renderTurnoDay();
   renderTurnoWeek();
-  renderAbsenceList();
+  renderAbsenceListWithJustificativa();
 }
 
 function renderTurnoDay(){
@@ -3246,9 +3271,10 @@ function parseTeamReports(){
       a.weeklyData[dateKey]={ticketMedio,vendasPorHora,highTicketPct,maxGapMin,totalVendas:normalSales.length,chatterTotal,extraTotal,shiftHours};
       // Auto-fill ficha técnica from analytics
       const f=S.chatterFichas[chatter.id];
-      const scoreLabel=n=>n>=4?'4 - Ótimo':n>=3?'3 - Bom':n>=2?'2 - Regular':'1 - Fraco';
-      const convScore=Math.min(5,Math.max(1,Math.round(vendasPorHora*2))); // scale: 2 vendas/h = 4
-      const ticketScore=ticketMedio>=100?5:ticketMedio>=50?4:ticketMedio>=30?3:ticketMedio>=15?2:1;
+      // Vendas/hora: 0.3=regular, 0.5=bom, 0.8=ótimo, 1+=excelente
+      const scoreLabel=n=>n>=5?'5 - Excelente':n>=4?'4 - Ótimo':n>=3?'3 - Bom':n>=2?'2 - Regular':'1 - Fraco';
+      const convScore=vendasPorHora>=1?5:vendasPorHora>=0.8?4:vendasPorHora>=0.5?3:vendasPorHora>=0.3?2:1;
+      const ticketScore=ticketMedio>=150?5:ticketMedio>=80?4:ticketMedio>=40?3:ticketMedio>=20?2:1;
       f.tech.conversao=scoreLabel(convScore);
       f.tech.ticket=scoreLabel(ticketScore);
     }
@@ -3314,13 +3340,29 @@ function parseTeamReports(){
 
   save();
 
+  // Re-render all views that depend on the parsed data
+  renderMetaProgress();
+  renderExtraProgress();
+  renderDailyByChatter();
+  renderDailyByModel();
+  renderReport('week');
+  renderChatterGoals();
+  renderEvolucao();
+  // If user is currently viewing fichas or faturamento, refresh those too
+  const cv=currentViewName();
+  if(cv==='fichas')renderFichas();
+  if(cv==='fat')renderFat();
+  if(cv==='report')renderReport_Weekly();
+
   exportLines.push(`TOTAL EQUIPE: ${money(totalEquipe)}`);
   document.getElementById('teamreport-results').innerHTML=
-    `<div style="font-size:11.5px;color:var(--ok);margin-bottom:10px">✅ ${blocks.length} relatório(s) processado(s) · Dados salvos automaticamente</div>`+resultsHtml;
+    `<div style="font-size:11.5px;color:var(--ok);margin-bottom:10px">✅ ${blocks.length} relatório(s) processado(s) · Faturamento, fichas e relatório atualizados automaticamente</div>`+resultsHtml;
   const summaryEl=document.getElementById('teamreport-summary');
   const exportEl=document.getElementById('teamreport-export');
   if(summaryEl)summaryEl.style.display='block';
   if(exportEl)exportEl.value=exportLines.join('\n');
+
+  toast('✅ Dados salvos! Faturamento e fichas atualizados.',4000);
 }
 
 function copyTeamReport(){
@@ -3713,6 +3755,34 @@ function renderFichaChatter(chatterId){
 
     <button class="btn btn-primary btn-block" style="margin-bottom:12px" onclick="saveFichaSnapshot('${chatterId}')">💾 Salvar snapshot semanal</button>
 
+    ${Object.keys(f.analytics?.weeklyData||{}).length?`
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">📊 Dados dos relatórios</div><div class="panel-note">Preenchido automaticamente</div></div>
+      ${Object.entries(f.analytics.weeklyData).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,7).map(([date,a])=>`
+        <div style="padding:8px 0;border-bottom:1px solid var(--line)">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:5px">${date}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">
+            <div style="text-align:center;background:var(--bg-soft);border-radius:6px;padding:5px">
+              <div style="font-size:9px;color:var(--text3)">Faturamento</div>
+              <div style="font-size:12px;font-weight:700;font-family:var(--font-mono)">${moneyShort(a.chatterTotal||0)}</div>
+            </div>
+            <div style="text-align:center;background:var(--bg-soft);border-radius:6px;padding:5px">
+              <div style="font-size:9px;color:var(--text3)">Ticket médio</div>
+              <div style="font-size:12px;font-weight:700;font-family:var(--font-mono)">${moneyShort(a.ticketMedio||0)}</div>
+            </div>
+            <div style="text-align:center;background:var(--bg-soft);border-radius:6px;padding:5px">
+              <div style="font-size:9px;color:var(--text3)">Vendas/hora</div>
+              <div style="font-size:12px;font-weight:700;color:${(a.vendasPorHora||0)>=1?'var(--ok)':(a.vendasPorHora||0)>=0.5?'var(--warn)':'var(--bad)'}">${a.vendasPorHora||0}</div>
+            </div>
+          </div>
+          ${a.highTicketPct>0||a.maxGapMin>0?`<div style="display:flex;gap:12px;margin-top:4px;font-size:11px;color:var(--text2)">
+            ${a.highTicketPct>0?`<span>High ticket: <strong style="color:${a.highTicketPct>=30?'var(--ok)':'var(--warn)'}">${a.highTicketPct}%</strong></span>`:''}
+            ${a.maxGapMin>0?`<span>Maior gap: <strong style="color:${a.maxGapMin>60?'var(--bad)':a.maxGapMin>30?'var(--warn)':'var(--ok)'}">${a.maxGapMin}min</strong></span>`:''}
+            ${a.extraTotal>0?`<span>Extra: <strong style="color:var(--info)">${moneyShort(a.extraTotal)}</strong></span>`:''}
+          </div>`:''}
+        </div>`).join('')}
+    </div>`:''}
+
     ${history.length?`
     <div class="panel">
       <div class="panel-head"><div class="panel-title">📜 Histórico cronológico</div></div>
@@ -3913,7 +3983,7 @@ function saveAbsence(){
   if(!chatterId||!date){toast('⚠️ Preencha os campos');return;}
   S.absences.push({id:'a'+Date.now(),chatterId,type,date,note});save();
   closeModal('m-absence');document.getElementById('abs-date').value='';document.getElementById('abs-note').value='';
-  toast('✅ Registrado!');renderAbsenceList();renderHome();
+  toast('✅ Registrado!');renderAbsenceListWithJustificativa();renderHome();
 }
 function saveOrientation(){
   const chatterId=document.getElementById('orient-chatter').value,text=document.getElementById('orient-text').value.trim();
@@ -4319,8 +4389,272 @@ function renderEstudosHistorico(){
 }
 
 /* ===========================================================
-   TURNO — delete shift button
+   SEMANA — per-chatter development + auto analysis
    =========================================================== */
+function renderSemanaDesenvolvimento(){
+  const el=document.getElementById('semana-desenvolvimento');
+  if(!el)return;
+  const wd=getWeekDates();
+  const chatters=S.chatters.filter(c=>c.time!=='elite');
+  if(!chatters.length){el.innerHTML='<div style="color:var(--text3);font-size:13px">Cadastre chatters e processe relatórios para ver os dados</div>';return;}
+
+  let hasData=false;
+  el.innerHTML=chatters.map(c=>{
+    const f=S.chatterFichas[c.id];
+    const analytics=f?.analytics?.weeklyData||{};
+    const wkeys=wd.map(d=>fmt(d)).filter(dk=>analytics[dk]);
+    if(!wkeys.length)return`<div style="padding:8px 0;border-bottom:1px solid var(--line);font-size:13px;color:var(--text3)">${c.name} — sem dados esta semana</div>`;
+    hasData=true;
+
+    let totalRev=0,totalVendas=0,totalTicket=0,totalVPH=0,totalHighPct=0,maxGap=0,totalExtra=0,days=0;
+    wkeys.forEach(dk=>{
+      const a=analytics[dk];
+      totalRev+=a.chatterTotal||0;
+      totalVendas+=a.totalVendas||0;
+      totalExtra+=a.extraTotal||0;
+      if(a.ticketMedio>0){totalTicket+=a.ticketMedio;totalVPH+=a.vendasPorHora||0;totalHighPct+=a.highTicketPct||0;days++;}
+      if((a.maxGapMin||0)>maxGap)maxGap=a.maxGapMin||0;
+    });
+    const avgTicket=days>0?totalTicket/days:0;
+    const avgVPH=days>0?Math.round(totalVPH/days*100)/100:0;
+    const avgHighPct=days>0?Math.round(totalHighPct/days):0;
+
+    return`<div style="margin-bottom:14px">
+      <div style="font-weight:700;font-size:14px;margin-bottom:8px">${c.name} <span style="font-size:11px;color:var(--text3)">(${wkeys.length} dia${wkeys.length>1?'s':''})</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+        <div style="background:var(--bg-soft);border-radius:8px;padding:8px;text-align:center">
+          <div style="font-size:10px;color:var(--text3)">Ticket médio</div>
+          <div style="font-size:14px;font-weight:800;font-family:var(--font-mono)">${money(avgTicket)}</div>
+        </div>
+        <div style="background:var(--bg-soft);border-radius:8px;padding:8px;text-align:center">
+          <div style="font-size:10px;color:var(--text3)">Vendas/hora</div>
+          <div style="font-size:14px;font-weight:800;color:${avgVPH>=1?'var(--ok)':avgVPH>=0.5?'var(--warn)':'var(--bad)'}">${avgVPH}</div>
+        </div>
+        <div style="background:var(--bg-soft);border-radius:8px;padding:8px;text-align:center">
+          <div style="font-size:10px;color:var(--text3)">% High ticket</div>
+          <div style="font-size:14px;font-weight:800;color:${avgHighPct>=30?'var(--ok)':avgHighPct>=15?'var(--warn)':'var(--bad)'}">${avgHighPct}%</div>
+        </div>
+        <div style="background:var(--bg-soft);border-radius:8px;padding:8px;text-align:center">
+          <div style="font-size:10px;color:var(--text3)">Maior gap</div>
+          <div style="font-size:14px;font-weight:800;color:${maxGap>60?'var(--bad)':maxGap>30?'var(--warn)':'var(--ok)'}">${maxGap?maxGap+'min':'—'}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;font-size:12px;color:var(--text2)">
+        <span>Total: <strong>${money(totalRev)}</strong></span>
+        <span>${totalVendas} vendas</span>
+        ${totalExtra>0?`<span style="color:var(--info)">⚡ Extra: ${money(totalExtra)}</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+
+  if(!hasData)el.innerHTML='<div style="color:var(--text3);font-size:13px">Processe relatórios na aba Rel.Equipe para ver os dados aqui</div>';
+}
+
+function gerarAnaliseSemanal(){
+  const el=document.getElementById('semana-analise');
+  if(!el)return;
+  const wd=getWeekDates();
+  const wkey=getWeekKey();
+  const goals=S.chatterWeekGoals[wkey]||{};
+  const chatters=S.chatters.filter(c=>c.time!=='elite');
+  if(!chatters.length){el.innerHTML='<div style="color:var(--text3);font-size:13px">Sem dados</div>';return;}
+
+  const linhas=[];
+  const destaques=[];
+  const atencao=[];
+
+  chatters.forEach(c=>{
+    const f=S.chatterFichas[c.id];
+    const analytics=f?.analytics?.weeklyData||{};
+    const wkeys=wd.map(d=>fmt(d)).filter(dk=>analytics[dk]);
+    if(!wkeys.length)return;
+
+    let totalRev=0,totalVendas=0,totalTicket=0,totalVPH=0,totalHighPct=0,maxGap=0,days=0;
+    wkeys.forEach(dk=>{
+      const a=analytics[dk];
+      totalRev+=a.chatterTotal||0;totalVendas+=a.totalVendas||0;
+      if(a.ticketMedio>0){totalTicket+=a.ticketMedio;totalVPH+=a.vendasPorHora||0;totalHighPct+=a.highTicketPct||0;days++;}
+      if((a.maxGapMin||0)>maxGap)maxGap=a.maxGapMin||0;
+    });
+    const avgTicket=days>0?totalTicket/days:0;
+    const avgVPH=days>0?Math.round(totalVPH/days*100)/100:0;
+    const avgHighPct=days>0?Math.round(totalHighPct/days):0;
+    const meta=parseFloat(goals[c.id])||0;
+    const pct=meta>0?Math.round((getChatterWeekRevenue(c.id)/meta)*100):null;
+
+    if(avgVPH>=1&&avgHighPct>=25)destaques.push(`${c.name} (${avgVPH} v/h, ${avgHighPct}% HT)`);
+    if(maxGap>90)atencao.push(`${c.name} ficou ${maxGap}min sem vender`);
+    if(pct!==null&&pct<50)atencao.push(`${c.name} está em ${pct}% da meta`);
+    if(avgTicket<20)atencao.push(`${c.name} com ticket médio baixo: ${money(avgTicket)}`);
+
+    linhas.push(`${c.name}: fat ${money(totalRev)} · ${avgVPH}v/h · ticket ${money(avgTicket)} · HT ${avgHighPct}%${pct!==null?' · meta '+pct+'%':''}`);
+  });
+
+  const analise=`📊 ANÁLISE DA SEMANA — ${wkey}\n\n`+
+    (destaques.length?`✅ Destaques:\n${destaques.map(d=>'• '+d).join('\n')}\n\n`:'')+
+    (atencao.length?`⚠️ Atenção:\n${atencao.map(a=>'• '+a).join('\n')}\n\n`:'')+
+    `📋 Resumo:\n${linhas.join('\n')}`;
+
+  el.innerHTML=`<pre style="font-size:12px;line-height:1.7;white-space:pre-wrap;font-family:var(--font-mono);color:var(--text)">${analise}</pre>
+    <button class="btn btn-ghost btn-sm btn-block" style="margin-top:8px" onclick="navigator.clipboard&&navigator.clipboard.writeText(document.querySelector('#semana-analise pre').textContent).then(()=>toast('✅ Copiado!'))">📋 Copiar análise</button>`;
+
+  // Save to week notes area for reference
+  if(!S.weekNotes)S.weekNotes={};
+  S.weekNotes[wkey+'_analise']=analise;
+  save();
+}
+
+/* ===========================================================
+   HORA EXTRA — fix to show values per chatter
+   =========================================================== */
+function getChatterExtraRevenueDetailed(chatterId){
+  const wkey=getWeekKey();
+  const slots=(S.horaExtraSlots[wkey]||[]).filter(x=>x.chatterId===chatterId);
+  const total=slots.reduce((s,x)=>s+(parseFloat(x.revenue)||0),0);
+  const byModel={};
+  slots.forEach(x=>{
+    const m=S.models.find(mm=>mm.id===x.modelId);
+    const key=m?m.name:'Outro';
+    byModel[key]=(byModel[key]||0)+(parseFloat(x.revenue)||0);
+  });
+  return{total,byModel,slots};
+}
+
+/* ===========================================================
+   AUSÊNCIAS — add justificativa field
+   =========================================================== */
+function renderAbsenceListWithJustificativa(){
+  const el=document.getElementById('absence-list');
+  if(!el)return;
+  const wd=getWeekDates();
+  const wStart=fmt(wd[0]),wEnd=fmt(wd[6]);
+  const weekAbs=S.absences.filter(a=>a.date>=wStart&&a.date<=wEnd).sort((a,b)=>b.date.localeCompare(a.date));
+  if(!weekAbs.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Nenhuma ocorrência esta semana</div>';return;}
+  el.innerHTML=weekAbs.map(a=>{
+    const c=S.chatters.find(ch=>ch.id===a.chatterId);
+    const typeLabel={falta:'🔴 Falta',atraso:'🟡 Atraso',saida_antecipada:'🟠 Saída antecipada'}[a.type]||a.type;
+    const justKey=`just_abs_${a.id}`;
+    const justText=(S.alertNotes&&S.alertNotes[justKey])||a.justificativa||'';
+    return`<div style="padding:10px 0;border-bottom:1px solid var(--line)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div><span style="font-weight:700">${c?c.name:'?'}</span> <span style="font-size:12px;color:var(--text2)">${typeLabel} · ${a.date}</span></div>
+        <button onclick="removeAbsence('${a.id}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px">✕</button>
+      </div>
+      ${a.note?`<div style="font-size:12px;color:var(--text2);margin-bottom:4px">${a.note}</div>`:''}
+      <input class="finput" style="font-size:11.5px;padding:5px 9px" placeholder="Justificativa (falta justificada, folga acordada, etc.)..."
+        value="${justText}" onblur="saveAbsenceJustificativa('${a.id}',this.value)">
+    </div>`;
+  }).join('');
+}
+function saveAbsenceJustificativa(absId,text){
+  const a=S.absences.find(x=>x.id===absId);
+  if(a)a.justificativa=text;
+  if(!S.alertNotes)S.alertNotes={};
+  S.alertNotes[`just_abs_${absId}`]=text;
+  save();
+}
+function removeAbsence(id){
+  S.absences=S.absences.filter(a=>a.id!==id);
+  save();renderAbsenceListWithJustificativa();
+}
+
+/* ===========================================================
+   EVOLUÇÃO — % improvement per chatter per metric
+   =========================================================== */
+function calcEvolutionPct(chatterId){
+  const f=S.chatterFichas[chatterId];
+  if(!f?.analytics?.weeklyData)return null;
+  const entries=Object.entries(f.analytics.weeklyData).sort((a,b)=>a[0].localeCompare(b[0]));
+  if(entries.length<2)return null;
+
+  const metrics=['ticketMedio','vendasPorHora','highTicketPct'];
+  const result={};
+  metrics.forEach(m=>{
+    const vals=entries.map(([,a])=>a[m]||0).filter(v=>v>0);
+    if(vals.length<2)return;
+    const first=vals[0],last=vals[vals.length-1];
+    const pct=first>0?Math.round(((last-first)/first)*100):0;
+    result[m]=pct;
+  });
+  return result;
+}
+
+function renderEvolucao(){
+  const el=document.getElementById('evolucao-content');
+  if(!el)return;
+  const wkey=getWeekKey();
+  let html='';
+
+  const p=S.managerProfile||{};
+  html+=`<div class="panel" style="border-left:3px solid var(--info);margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="width:44px;height:44px;border-radius:50%;overflow:hidden;background:var(--bg-soft);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px">
+        ${p.photoUrl?`<img src="${p.photoUrl}" style="width:100%;height:100%;object-fit:cover">`:'👤'}
+      </div>
+      <div><div style="font-weight:800;font-size:15px">${p.name||'Gestor'}</div>
+      <div style="font-size:12px;color:var(--info)">${p.cargo||'Gestor de Chatters'}</div></div>
+    </div>
+  </div>`;
+
+  html+=`<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Evolução da equipe</div>`;
+
+  if(!S.chatters.length){el.innerHTML=html+'<div style="color:var(--text3);font-size:13px">Cadastre chatters na aba Equipe</div>';return;}
+
+  const metricLabels={ticketMedio:'Ticket médio',vendasPorHora:'Vendas/hora',highTicketPct:'% High ticket'};
+
+  S.chatters.forEach(c=>{
+    const rev=getChatterWeekRevenueTotal(c.id);
+    const goals=S.chatterWeekGoals[wkey]||{};
+    const meta=parseFloat(goals[c.id])||0;
+    const pct=meta>0?Math.round((getChatterWeekRevenue(c.id)/meta)*100):null;
+    const f=S.chatterFichas[c.id]||{};
+    const analytics=f?.analytics?.weeklyData||{};
+    const wd=getWeekDates();
+    let ticketSum=0,vphSum=0,highSum=0,days=0,maxGap=0;
+    wd.forEach(d=>{const a=analytics[fmt(d)];if(a&&a.ticketMedio>0){ticketSum+=a.ticketMedio;vphSum+=a.vendasPorHora||0;highSum+=a.highTicketPct||0;days++;if((a.maxGapMin||0)>maxGap)maxGap=a.maxGapMin||0;}});
+    const avgTicket=days>0?ticketSum/days:0;
+    const avgVPH=days>0?Math.round(vphSum/days*100)/100:0;
+    const avgHigh=days>0?Math.round(highSum/days):0;
+
+    const evoPct=calcEvolutionPct(c.id);
+    const timeLabel=c.time==='elite'?'<span class="pill pill-warn" style="font-size:9px">⭐ Elite</span>':'';
+
+    html+=`<div class="panel" style="margin-bottom:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="font-weight:700;font-size:14px">${c.name}</div>${timeLabel}
+          <span class="pill pill-flat" style="font-size:9px">${c.level}</span>
+        </div>
+        <div style="font-family:var(--font-mono);font-weight:800;font-size:14px;color:var(--ok)">${moneyShort(rev)}</div>
+      </div>
+      ${meta>0?`<div style="background:var(--line);border-radius:4px;height:6px;overflow:hidden;margin-bottom:6px">
+        <div style="height:6px;border-radius:4px;background:${pct>=100?'var(--ok)':pct>=60?'var(--warn)':'var(--bad)'};width:${Math.min(100,pct||0)}%"></div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:8px">${pct}% da meta</div>`:''}
+      ${days>0?`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:8px">
+        <div style="background:var(--bg-soft);border-radius:7px;padding:6px;text-align:center">
+          <div style="font-size:9px;color:var(--text3)">Ticket médio</div>
+          <div style="font-size:13px;font-weight:700;font-family:var(--font-mono)">${money(avgTicket)}</div>
+          ${evoPct?.ticketMedio!==undefined?`<div style="font-size:10px;color:${evoPct.ticketMedio>=0?'var(--ok)':'var(--bad)'}">${evoPct.ticketMedio>=0?'▲':'▼'}${Math.abs(evoPct.ticketMedio)}%</div>`:''}
+        </div>
+        <div style="background:var(--bg-soft);border-radius:7px;padding:6px;text-align:center">
+          <div style="font-size:9px;color:var(--text3)">Vendas/hora</div>
+          <div style="font-size:13px;font-weight:700;color:${avgVPH>=1?'var(--ok)':avgVPH>=0.5?'var(--warn)':'var(--bad)'}">${avgVPH}</div>
+          ${evoPct?.vendasPorHora!==undefined?`<div style="font-size:10px;color:${evoPct.vendasPorHora>=0?'var(--ok)':'var(--bad)'}">${evoPct.vendasPorHora>=0?'▲':'▼'}${Math.abs(evoPct.vendasPorHora)}%</div>`:''}
+        </div>
+        <div style="background:var(--bg-soft);border-radius:7px;padding:6px;text-align:center">
+          <div style="font-size:9px;color:var(--text3)">High ticket</div>
+          <div style="font-size:13px;font-weight:700;color:${avgHigh>=30?'var(--ok)':avgHigh>=15?'var(--warn)':'var(--bad)'}">${avgHigh}%</div>
+          ${evoPct?.highTicketPct!==undefined?`<div style="font-size:10px;color:${evoPct.highTicketPct>=0?'var(--ok)':'var(--bad)'}">${evoPct.highTicketPct>=0?'▲':'▼'}${Math.abs(evoPct.highTicketPct)}%</div>`:''}
+        </div>
+      </div>`:'<div style="font-size:12px;color:var(--text3);margin-bottom:6px">Processe relatórios para ver métricas</div>'}
+      ${evoPct&&Object.keys(evoPct).length?`<div style="font-size:11px;color:var(--text2)">Evolução vs primeiro registro: ${Object.entries(evoPct).map(([k,v])=>`${metricLabels[k]}: <strong style="color:${v>=0?'var(--ok)':'var(--bad)'}">${v>=0?'+':''}${v}%</strong>`).join(' · ')}</div>`:''}
+    </div>`;
+  });
+
+  el.innerHTML=html;
+}
+
 function deleteShift(shiftId){
   if(!confirm('Remover este turno?'))return;
   S.shifts=S.shifts.filter(s=>s.id!==shiftId);
@@ -4366,10 +4700,16 @@ function renderExtraProgress(){
   const chattersWithExtra=S.chatters.filter(c=>getChatterExtraRevenue(c.id)>0);
   if(!chattersWithExtra.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Nenhuma hora extra registrada esta semana</div>';return;}
   el.innerHTML=chattersWithExtra.map(c=>{
-    const extra=getChatterExtraRevenue(c.id);
-    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)">
-      <div style="font-weight:600;font-size:13px">${c.name}</div>
-      <div style="font-family:var(--font-mono);font-weight:700;color:var(--info)">⚡ ${money(extra)}</div>
+    const det=getChatterExtraRevenueDetailed(c.id);
+    const byModelHtml=Object.entries(det.byModel).map(([name,val])=>
+      `<div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--text2);padding:2px 0 2px 10px"><span>${name}</span><span style="font-family:var(--font-mono)">${money(val)}</span></div>`
+    ).join('');
+    return`<div style="padding:8px 0;border-bottom:1px solid var(--line)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <div style="font-weight:600;font-size:13px">${c.name}</div>
+        <div style="font-family:var(--font-mono);font-weight:700;color:var(--info)">⚡ ${money(det.total)}</div>
+      </div>
+      ${byModelHtml}
     </div>`;
   }).join('');
 }
@@ -4492,71 +4832,5 @@ function renderGestao(){
 /* ===========================================================
    EVOLUÇÃO — auto-summary of all people
    =========================================================== */
-function renderEvolucao(){
-  const el=document.getElementById('evolucao-content');
-  if(!el)return;
-  const wkey=getWeekKey();
-  let html='';
 
-  // Manager card — profile only, no estudos
-  const p=S.managerProfile||{};
-  html+=`<div class="panel" style="border-left:3px solid var(--info);margin-bottom:16px">
-    <div style="display:flex;align-items:center;gap:12px">
-      <div style="width:44px;height:44px;border-radius:50%;overflow:hidden;background:var(--bg-soft);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px">
-        ${p.photoUrl?`<img src="${p.photoUrl}" style="width:100%;height:100%;object-fit:cover">`:'👤'}
-      </div>
-      <div>
-        <div style="font-weight:800;font-size:15px">${p.name||'Gestor'}</div>
-        <div style="font-size:12px;color:var(--info)">${p.cargo||'Gestor de Chatters'}</div>
-      </div>
-    </div>
-  </div>`;
-
-  // Team section
-  html+=`<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Equipe — evolução semanal</div>`;
-
-  if(!S.chatters.length){
-    html+='<div style="color:var(--text3);font-size:13px;padding:12px 0">Cadastre chatters na aba Equipe</div>';
-    el.innerHTML=html;return;
-  }
-
-  S.chatters.forEach(c=>{
-    const rev=getChatterWeekRevenueTotal(c.id);
-    const goals=S.chatterWeekGoals[wkey]||{};
-    const meta=parseFloat(goals[c.id])||0;
-    const pct=meta>0?Math.round((getChatterWeekRevenue(c.id)/meta)*100):null;
-    const f=S.chatterFichas[c.id]||{};
-    const analytics=f?.analytics?.weeklyData||{};
-    const wd=getWeekDates();
-    let ticketSum=0,ticketDays=0,highPctSum=0;
-    wd.forEach(d=>{const a=analytics[fmt(d)];if(a&&a.ticketMedio>0){ticketSum+=a.ticketMedio;highPctSum+=a.highTicketPct||0;ticketDays++;}});
-    const ticketMedio=ticketDays>0?ticketSum/ticketDays:0;
-    const highPct=ticketDays>0?Math.round(highPctSum/ticketDays):0;
-    const analyses=[];
-    Object.values(S.chatAnalyses||{}).forEach(arr=>(arr||[]).filter(a=>a.chatterId===c.id).forEach(a=>analyses.push(a)));
-    const avgScore=analyses.length?Math.round(CHAT_METRICS.reduce((s,m)=>s+analyses.reduce((ss,a)=>ss+(a[m]||0),0)/analyses.length,0)/CHAT_METRICS.length*10)/10:null;
-    const timeLabel=c.time==='elite'?'<span class="pill pill-warn" style="font-size:9px">⭐ Elite</span>':'<span class="pill pill-flat" style="font-size:9px">Básico</span>';
-
-    html+=`<div class="panel" style="margin-bottom:8px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <div style="display:flex;align-items:center;gap:6px">
-          <div style="font-weight:700;font-size:14px">${c.name}</div>${timeLabel}
-          <span class="pill pill-flat" style="font-size:9px">${c.level}</span>
-        </div>
-        <div style="font-family:var(--font-mono);font-weight:800;font-size:14px;color:var(--ok)">${moneyShort(rev)}</div>
-      </div>
-      ${meta>0?`<div style="background:var(--line);border-radius:4px;height:6px;overflow:hidden;margin-bottom:4px">
-        <div style="height:6px;border-radius:4px;background:${pct>=100?'var(--ok)':pct>=60?'var(--warn)':'var(--bad)'};width:${Math.min(100,pct||0)}%"></div>
-      </div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:6px">${pct}% da meta${pct<60?' · 🔴 atenção':pct>=100?' · ✅':''}</div>`:''}
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
-        ${ticketMedio>0?`<span style="font-size:12px;color:var(--text2)">Ticket médio: <strong>${money(ticketMedio)}</strong></span>`:''}
-        ${highPct>0?`<span style="font-size:12px;color:var(--text2)">High ticket: <strong style="color:${highPct>=30?'var(--ok)':'var(--warn)'}">${highPct}%</strong></span>`:''}
-        ${avgScore!==null?`<span style="font-size:12px;color:var(--text2)">Análise: <strong style="color:${avgScore>=4?'var(--ok)':avgScore>=3?'var(--warn)':'var(--bad)'}">${avgScore}/5</strong></span>`:''}
-      </div>
-    </div>`;
-  });
-
-  el.innerHTML=html;
-}
 
