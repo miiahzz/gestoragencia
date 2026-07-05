@@ -1151,29 +1151,17 @@ function renderEscritorioPanel(){
         const shifts=S.shifts.filter(s=>s.chatterId===c.id&&(s.days||[]).includes(todayDK));
         const models=[...new Set(shifts.flatMap(s=>s.modelIds||[]))].map(mid=>S.models.find(m=>m.id===mid)).filter(Boolean);
         const ends=shifts.flatMap(s=>s.end2&&s.end2>s.end?[s.end2]:[s.end]).sort().reverse()[0]||'';
-        const isManual=manualOnline.includes(c.id);
         return`<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)">
-          <div style="width:9px;height:9px;border-radius:50%;background:${isManual?'var(--info)':'var(--ok)'};${isManual?'':'animation:pulse 2s infinite;'}flex-shrink:0"></div>
+          <div style="width:9px;height:9px;border-radius:50%;background:var(--ok);animation:pulse 2s infinite;flex-shrink:0"></div>
           <div style="flex:1">
-            <div style="font-weight:700;font-size:14px">${c.name}${isManual?' <span style="font-size:10px;color:var(--info)">manual</span>':''}</div>
+            <div style="font-weight:700;font-size:14px">${c.name}</div>
             <div style="font-size:11.5px;color:var(--text2)">${models.map(m=>`${m.emoji||''} ${m.name}`).join(' · ')||'online'}${ends?' · até '+ends:''}</div>
           </div>
-          <button onclick="toggleManualOnline('${c.id}',false)" style="background:none;border:1px solid var(--line);border-radius:6px;padding:3px 8px;cursor:pointer;font-size:11px;color:var(--text3)">saiu</button>
         </div>`;
       }).join('')
     :`<div style="font-size:13px;color:var(--text3);padding:8px 0">Ninguém online agora</div>`}
 
-    ${notOnline.length?`
-    <div style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
-      <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:8px">MARCAR COMO ONLINE</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px">
-        ${notOnline.map(c=>`
-          <button onclick="toggleManualOnline('${c.id}',true)"
-            style="background:var(--bg-soft);border:1.5px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer;font-family:var(--font-display);font-size:12.5px;font-weight:700;color:var(--text)">
-            + ${c.name}
-          </button>`).join('')}
-      </div>
-    </div>`:''}
+
 
     <button onclick="toggleNextTurno()" style="width:100%;margin-top:12px;background:var(--bg-soft);border:1.5px solid var(--line);border-radius:9px;padding:10px 14px;cursor:pointer;font-family:var(--font-display);font-size:13px;font-weight:700;color:var(--text);display:flex;align-items:center;justify-content:space-between">
       <span>⏳ PRÓXIMO TURNO</span>
@@ -1194,17 +1182,19 @@ function renderEscritorioPanel(){
 function toggleManualOnline(chatterId, goOnline){
   const today=todayKey();
   if(!S.turnoLog[today])S.turnoLog[today]=[];
-  // Remove any existing entry for this chatter today
   S.turnoLog[today]=S.turnoLog[today].filter(x=>x.chatterId!==chatterId||x.status==='in'||x.status==='out');
   if(goOnline){
     S.turnoLog[today].push({chatterId,status:'manual_online',time:new Date().toTimeString().slice(0,5)});
-    toast(`✅ ${S.chatters.find(c=>c.id===chatterId)?.name} marcado online`);
   } else {
     S.turnoLog[today].push({chatterId,status:'manual_offline',time:new Date().toTimeString().slice(0,5)});
-    toast(`${S.chatters.find(c=>c.id===chatterId)?.name} saiu`);
   }
-  save();
-  renderEscritorioPanel();
+  save();renderEscritorioPanel();
+}
+function clearManualOnline(chatterId){
+  const today=todayKey();
+  if(!S.turnoLog[today])return;
+  S.turnoLog[today]=S.turnoLog[today].filter(x=>x.chatterId!==chatterId||x.status==='in'||x.status==='out');
+  save();renderEscritorioPanel();
 }
 
 
@@ -1487,21 +1477,24 @@ function renderTurnoDay(){
     const modelStr=r.models.map(m=>`${m.emoji||'🧩'} ${m.name}`).join(' · ');
     const isManualOn=(S.turnoLog[today]||[]).some(x=>x.chatterId===r.c.id&&x.status==='manual_online');
     const isManualOff=(S.turnoLog[today]||[]).some(x=>x.chatterId===r.c.id&&x.status==='manual_offline');
+    const hasManual=isManualOn||isManualOff;
     const effectiveStatus=isManualOn?'on':isManualOff?'done':r.status;
     const isOnline=effectiveStatus==='on';
+    const statusLabel={on:'online',next:'aguardando',done:'encerrado'}[effectiveStatus]||effectiveStatus;
+    const statusColor=statusColors[effectiveStatus];
     return`<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)">
+      <div style="font-size:17px;flex-shrink:0">${statusIcons[effectiveStatus]}</div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:14px">${r.c.name}${r.isSwap?` <span style="font-size:10px;color:var(--info)">(troca p/ ${r.origName||'?'})</span>`:''}</div>
         <div style="font-size:12px;color:var(--text2);margin-top:1px">${timeStr}${modelStr?' · '+modelStr:''}</div>
       </div>
-      <button onclick="toggleManualOnline('${r.c.id}',${!isOnline});renderTurnoDay();"
-        style="padding:6px 14px;border-radius:20px;border:none;cursor:pointer;font-size:12px;font-weight:700;
-        background:${isOnline?'var(--ok)':'var(--bg-soft)'};
-        color:${isOnline?'#fff':'var(--text3)'};
-        border:1.5px solid ${isOnline?'var(--ok)':'var(--line)'};
-        transition:all .15s">
-        ${isOnline?'● online':'○ off'}
-      </button>
+      ${hasManual
+        ?`<button onclick="clearManualOnline('${r.c.id}');renderTurnoDay();"
+            style="padding:4px 10px;border-radius:16px;border:1px solid var(--line);background:transparent;cursor:pointer;font-size:11px;color:var(--text3)">auto</button>`
+        :`<button onclick="toggleManualOnline('${r.c.id}',${!isOnline});renderTurnoDay();"
+            style="padding:4px 10px;border-radius:16px;border:1.5px solid ${statusColor};background:transparent;cursor:pointer;font-size:11px;font-weight:600;color:${statusColor}">
+            ${statusLabel}
+          </button>`}
     </div>`;
   };
 
@@ -1542,6 +1535,43 @@ function renderTurnoWeek(){
   });
 
   const blocks=Object.values(modelGroups).filter(g=>g.shifts.length);
+
+  // If no blocks (e.g. all elite or no model assigned), show all shifts directly
+  if(!blocks.length){
+    const allShifts=S.shifts.filter(s=>{
+      const c=S.chatters.find(ch=>ch.id===s.chatterId);
+      return !c||c.time!=='elite';
+    });
+    if(!allShifts.length){
+      el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:8px 0">Nenhum turno cadastrado ainda.</div>';
+      return;
+    }
+    // Show without model grouping
+    const sorted=allShifts.sort((a,b)=>{
+      const toM=t=>{if(!t)return 9999;const[h,mn]=t.split(':').map(Number);return h<7?h*60+mn+1440:h*60+mn;};
+      return toM(a.start)-toM(b.start);
+    });
+    el.innerHTML=sorted.map(s=>{
+      const c=S.chatters.find(ch=>ch.id===s.chatterId);
+      const t1=`${s.start}–${s.end}`;
+      const t2=s.start2&&s.end2?`${s.start2}–${s.end2}`:'';
+      const days=(s.days||[]).map(d=>({seg:'Seg',ter:'Ter',qua:'Qua',qui:'Qui',sex:'Sex',sab:'Sáb',dom:'Dom'}[d]||d)).join(' ');
+      if(turnoEditMode)return`<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-soft);border-radius:8px;margin-bottom:5px">
+        <div style="flex:1"><div style="font-weight:700;font-size:13.5px">${c?c.name:'—'}</div>
+        <div style="font-size:11.5px;color:var(--text2)"><span style="font-family:var(--font-mono);color:var(--warn)">${t1}${t2?' · '+t2:''}</span>${days?' · '+days:''}</div></div>
+        <button onclick="openEditShiftFromProfile('${s.id}','${s.chatterId}')" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px">✏️</button>
+        <button onclick="deleteShift('${s.id}')" style="background:none;border:none;color:var(--bad);cursor:pointer;font-size:15px;padding:0 4px">✕</button>
+      </div>`;
+      return`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)">
+        <div style="font-family:var(--font-mono);font-size:12.5px;color:var(--warn);min-width:110px;flex-shrink:0">${t1}${t2?' · '+t2:''}</div>
+        <div style="font-size:13.5px;font-weight:700;flex:1">${c?c.name:'—'}</div>
+      </div>`;
+    }).join('');
+    el.innerHTML+=turnoEditMode
+      ?`<button onclick="toggleTurnoEditMode()" style="width:100%;margin-top:4px;padding:8px;background:var(--ok-soft);border:1px solid var(--ok);border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;color:var(--ok)">✅ Concluir edição</button>`
+      :`<button onclick="toggleTurnoEditMode()" style="width:100%;margin-top:4px;padding:8px;background:transparent;border:1px dashed var(--line);border-radius:8px;cursor:pointer;font-size:12px;color:var(--text3)">✏️ editar escala</button>`;
+    return;
+  }
 
   el.innerHTML=blocks.map(g=>{
     const m=g.model;
@@ -3485,7 +3515,7 @@ function parseTeamReports(){
       if(!S.chatterFichas[chatter.id].analytics)S.chatterFichas[chatter.id].analytics={};
       const a=S.chatterFichas[chatter.id].analytics;
       if(!a.weeklyData)a.weeklyData={};
-      a.weeklyData[dateKey]={ticketMedio,vendasPorHora,highTicketPct,maxGapMin,totalVendas:normalSales.length,chatterTotal,extraTotal,shiftHours};
+      a.weeklyData[dateKey]={ticketMedio,vendasPorHora,highTicketPct,maxGapMin,totalVendas:normalSales.length,chatterTotal,extraTotal,shiftHours,saleTimes:saleTsAll};
       // Auto-fill ficha técnica from analytics
       const f=S.chatterFichas[chatter.id];
       // Valor/hora: 0.3=regular, 0.5=bom, 0.8=ótimo, 1+=excelente
@@ -4867,17 +4897,32 @@ function renderEvolucao(){
     const wkeys=wd.map(d=>fmt(d)).filter(dk=>analytics[dk]);
 
     // Aggregate analytics
-    let ticketSum=0,vphSum=0,highSum=0,maxGap=0,days=0,totalV=0,extraV=0;
+    let ticketSum=0,vphSum=0,highSum=0,maxGap=0,days=0,totalV=0,extraV=0,totalVendas=0;
+    const allSaleTimes=[]; // all sale times in minutes for peak hour
     wkeys.forEach(dk=>{
       const a=analytics[dk];
       totalV+=a.chatterTotal||0; extraV+=a.extraTotal||0;
+      totalVendas+=a.totalVendas||0;
       if(a.ticketMedio>0){ticketSum+=a.ticketMedio;vphSum+=a.vendasPorHora||0;highSum+=a.highTicketPct||0;days++;}
       if((a.maxGapMin||0)>maxGap)maxGap=a.maxGapMin||0;
+      if(a.saleTimes)a.saleTimes.forEach(t=>allSaleTimes.push(t));
     });
     const avgTicket=days>0?ticketSum/days:0;
     const avgVph=days>0?Math.round(vphSum/days*100)/100:0;
     const avgHigh=days>0?Math.round(highSum/days):0;
     teamTotal+=rev; if(days>0){teamDays++;teamTicketSum+=avgTicket;teamVphSum+=avgVph;teamHighSum+=avgHigh;}
+
+    // Peak hour calculation — find hour with most sales
+    let peakHour=null;
+    if(allSaleTimes.length>=3){
+      const hourCount={};
+      allSaleTimes.forEach(mins=>{
+        const h=Math.floor(mins/60)%24;
+        hourCount[h]=(hourCount[h]||0)+1;
+      });
+      const topH=Object.entries(hourCount).sort((a,b)=>b[1]-a[1])[0];
+      if(topH)peakHour=`${String(topH[0]).padStart(2,'0')}h–${String((parseInt(topH[0])+1)%24).padStart(2,'0')}h`;
+    }
 
     // Chat analyses
     const analyses=[];
@@ -4928,6 +4973,14 @@ function renderEvolucao(){
         <div style="background:var(--bg-soft);border-radius:7px;padding:7px;text-align:center">
           <div style="font-size:9px;color:var(--text3)">High ticket</div>
           <div style="font-size:13px;font-weight:700;color:${avgHigh>=30?'var(--ok)':avgHigh>=15?'var(--warn)':'var(--bad)'}">${avgHigh}%</div>
+        </div>
+        <div style="background:var(--bg-soft);border-radius:7px;padding:7px;text-align:center">
+          <div style="font-size:9px;color:var(--text3)">Vendas semana</div>
+          <div style="font-size:15px;font-weight:800;color:var(--info)">${totalVendas}</div>
+        </div>
+        <div style="background:var(--bg-soft);border-radius:7px;padding:7px;text-align:center;grid-column:${peakHour?'2/4':'2/3'}">
+          <div style="font-size:9px;color:var(--text3)">🔥 Melhor horário</div>
+          <div style="font-size:13px;font-weight:700;color:var(--accent)">${peakHour||'—'}</div>
         </div>
       </div>`:'<div style="font-size:12px;color:var(--text3);margin-bottom:8px">Processe relatórios para ver métricas</div>'}
       ${avgScore!==null?`<div style="font-size:12px;color:var(--text2);margin-bottom:8px">Análise do chat: <strong style="color:${avgScore>=4?'var(--ok)':avgScore>=3?'var(--warn)':'var(--bad)'}">${avgScore}/5</strong> (${analyses.length} análise${analyses.length>1?'s':''})</div>`:''}
@@ -5111,20 +5164,23 @@ function renderHomeMissingReports(){
     });
   });
   if(!missing.length){el.innerHTML='';return;}
+  // Group by chatter
   const byChatter={};
   missing.forEach(x=>{
-    if(!byChatter[x.id])byChatter[x.id]={name:x.name,dates:[]};
+    if(!byChatter[x.id])byChatter[x.id]={name:x.name,id:x.id,dates:[]};
     byChatter[x.id].dates.push(x.date);
   });
-  el.innerHTML=`<div class="panel" style="border-color:var(--bad)">
-    <div class="panel-head"><div class="panel-title" style="color:var(--bad)">📋 Relatórios faltando</div></div>
+  // Small compact warning
+  el.innerHTML=`<div style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:10px;padding:12px;margin-bottom:10px">
+    <div style="font-size:12px;font-weight:700;color:var(--bad);margin-bottom:8px">📋 Sem relatório de vendas</div>
     ${Object.values(byChatter).map(x=>`
-      <div style="padding:8px 0;border-bottom:1px solid var(--line)">
+      <div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(180,35,52,.15)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-          <div style="font-weight:700;font-size:13px;color:var(--bad)">⚠️ ${x.name}</div>
-          <div style="font-size:11px;color:var(--text3)">${x.dates.map(d=>d.slice(5)).join(', ')}</div>
+          <span style="font-size:13px;font-weight:700">${x.name}</span>
+          <span style="font-size:11px;color:var(--bad)">${x.dates.map(d=>d.slice(5)).join(', ')}</span>
         </div>
-        <input class="finput" style="font-size:11.5px;padding:5px 9px" placeholder="Justificativa (falta, folga acordada...)"
+        <input class="finput" style="font-size:12px;padding:5px 9px;background:#fff"
+          placeholder="Justificativa..." 
           value="${(S.justificativas&&S.justificativas['just_'+x.id+'_'+x.dates[0]])||''}"
           onblur="saveJustificativa2('${x.id}',this.value,'${x.dates.join(',')}')">
       </div>`).join('')}
@@ -5161,6 +5217,13 @@ function renderGestao(){
   renderScheduleRequests();
   const sel=document.getElementById('sched-req-chatter');
   if(sel&&!sel.options.length)sel.innerHTML=S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  // Always populate chat analysis chatter select with full team list
+  const casel=document.getElementById('chat-analysis-chatter');
+  if(casel){
+    const prev=casel.value;
+    casel.innerHTML='<option value="">— selecionar chatter —</option>'+S.chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+    if(prev)casel.value=prev;
+  }
   renderChatAnalysisList();
   renderOrientList();
   renderGestaoMissingReports();
