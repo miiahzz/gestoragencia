@@ -3485,24 +3485,47 @@ function parseTeamReports(){
 
   save();
 
+  // Collect unique dates from parsed blocks
+  const parsedDates=[...new Set(blocks.map(b=>{
+    if(!b.dateRaw)return null;
+    const p=b.dateRaw.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+    if(!p)return null;
+    const yr=p[3].length===2?'20'+p[3]:p[3];
+    return`${yr}-${p[2].padStart(2,'0')}-${p[1].padStart(2,'0')}`;
+  }).filter(Boolean))].sort();
+
+  // Navigate faturamento to the most recent parsed date
+  if(parsedDates.length){
+    selectedFatDate=parsedDates[parsedDates.length-1];
+    const picker=document.getElementById('fat-date-picker');
+    if(picker)picker.value=selectedFatDate;
+  }
+
   const safeRender=(fn,name)=>{try{fn();}catch(e){console.warn('renderError',name,e);}};
-  // Always re-render these (elements exist on all views)
   safeRender(renderMetaProgress,'meta');
   safeRender(renderExtraProgress,'extra');
   safeRender(renderEvolucao,'evolucao');
   safeRender(renderGestaoMissingReports,'missing-reports');
-  // Re-render current view fully
-  const cv=currentViewName();
-  safeRender(()=>renderView(cv),'current-view');
-  // Also refresh faturamento panels (may exist hidden)
+  safeRender(renderRevenueTable,'revenue-table');
   safeRender(renderDailyByChatter,'daily-chatter');
   safeRender(renderDailyByModel,'daily-model');
   safeRender(renderSemanaRevenue,'semana-rev');
   safeRender(renderSemanaDesenvolvimento,'semana-dev');
+  const cv=currentViewName();
+  safeRender(()=>renderView(cv),'current-view');
 
   exportLines.push(`TOTAL EQUIPE: ${money(totalEquipe)}`);
+
+  const datesInfo=parsedDates.length?`<div style="margin-top:8px;font-size:12px;color:var(--text2)">
+    📅 Dias processados: ${parsedDates.join(', ')}
+    <button class="btn btn-ghost btn-xs" style="margin-left:8px" onclick="navTo('fat')">Ver no Faturamento →</button>
+  </div>`:'';
+
   document.getElementById('teamreport-results').innerHTML=
-    `<div style="font-size:11.5px;color:var(--ok);margin-bottom:10px">✅ ${blocks.length} relatório(s) processado(s) · Faturamento, fichas e relatório atualizados automaticamente</div>`+resultsHtml;
+    `<div style="font-size:12px;background:var(--ok-soft);border-radius:8px;padding:10px;margin-bottom:12px">
+      ✅ <strong>${blocks.length} relatório(s) processado(s)</strong> — dados salvos em faturamento, fichas e semana.
+      ${datesInfo}
+    </div>`+resultsHtml;
   const summaryEl=document.getElementById('teamreport-summary');
   const exportEl=document.getElementById('teamreport-export');
   if(summaryEl)summaryEl.style.display='block';
