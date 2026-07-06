@@ -166,14 +166,25 @@ function listenToFirestore(connectTimeout){
             S={...S,...safeParsed};
             // Always save merged result to both keys
             try{const p=JSON.stringify(S);localStorage.setItem(DB,p);localStorage.setItem('gestorpro_backup',p);}catch(e){}
-            try{localStorage.setItem(DB,JSON.stringify(S));}catch(e){}
             const active=document.activeElement;
             const isTyping=active&&(active.tagName==='INPUT'||active.tagName==='TEXTAREA'||active.tagName==='SELECT');
             if(isTyping){
-              const rerenderOnBlur=()=>{renderView(currentViewName());active.removeEventListener('blur',rerenderOnBlur);};
+              const rerenderOnBlur=()=>{
+                _rts[currentViewName()]=0;
+                renderView(currentViewName());
+                active.removeEventListener('blur',rerenderOnBlur);
+              };
               active.addEventListener('blur',rerenderOnBlur,{once:true});
             } else {
-              renderView(currentViewName());
+              const cv=currentViewName();
+              // Heavy views: don't re-render on Firebase sync, just update badge
+              const heavy=['evolucao','projecao','pagamento','chatlab','testers'];
+              if(heavy.includes(cv)){
+                updateSyncBadge();
+              } else {
+                _rts[cv]=0;
+                renderView(cv);
+              }
             }
           }catch(e){}
         }
@@ -414,6 +425,9 @@ function moneyShort(n){return 'R$'+(n||0).toLocaleString('pt-BR',{maximumFractio
 
 // ---------- NAV ----------
 const VIEWS=['home','turno','semana','time','fat','report','extra','gerador','gestao','fichas','estudos','evolucao','chatlab','testers','pagamento','projecao'];
+// Render timestamp cache — debounce rapid re-renders (Firebase sync spam)
+const _rts={};
+
 function navTo(view){
   if(!view)return;
   VIEWS.forEach(v=>{const el=document.getElementById('v-'+v);if(el)el.classList.remove('active');});
@@ -421,26 +435,33 @@ function navTo(view){
   if(target)target.classList.add('active');
   document.querySelectorAll('.toptab').forEach(t=>t.classList.toggle('active',t.dataset.go===view));
   document.querySelectorAll('.navbtn').forEach(t=>t.classList.toggle('active',t.dataset.go===view));
+  _rts[view]=0; // reset so explicit nav always renders
   renderView(view);
 }
 function renderView(v){
+  // Debounce: skip if same view rendered < 350ms ago (prevents Firebase sync re-render spam)
+  const now=Date.now();
+  if(_rts[v]&&(now-_rts[v])<350)return;
+  _rts[v]=now;
+  // Guard: only render if this view is currently active
+  const activeId=document.querySelector('.view.active')?.id?.replace('v-','');
+  if(activeId&&activeId!==v)return;
   if(v==='home')renderHome();
-  if(v==='turno')renderTurno();
-  if(v==='semana')renderSemana();
-  if(v==='time')renderTeam('all');
-  if(v==='fat')renderFat();
-  if(v==='report')renderReport_Weekly();
-  if(v==='extra')renderExtra();
-  if(v==='gerador')renderGerador();
-  if(v==='gestao')renderGestao();
-  if(v==='fichas')renderFichas();
-  if(v==='estudos')renderEstudos();
-  if(v==='evolucao')renderEvolucao();
-  if(v==='chatlab')renderChatLab();
-  if(v==='testers')renderTesters();
-  if(v==='pagamento')renderPagamento();
-  if(v==='projecao')renderProjecao();
-
+  else if(v==='turno')renderTurno();
+  else if(v==='semana')renderSemana();
+  else if(v==='time')renderTeam('all');
+  else if(v==='fat')renderFat();
+  else if(v==='report')renderReport_Weekly();
+  else if(v==='extra')renderExtra();
+  else if(v==='gerador')renderGerador();
+  else if(v==='gestao')renderGestao();
+  else if(v==='fichas')renderFichas();
+  else if(v==='estudos')renderEstudos();
+  else if(v==='evolucao')renderEvolucao();
+  else if(v==='chatlab')renderChatLab();
+  else if(v==='testers')renderTesters();
+  else if(v==='pagamento')renderPagamento();
+  else if(v==='projecao')renderProjecao();
 }
 document.querySelectorAll('.toptab,.navbtn').forEach(el=>el.addEventListener('click',()=>navTo(el.dataset.go)));
 
@@ -3733,14 +3754,9 @@ function parseTeamReports(){
   const safeRender=(fn,name)=>{try{fn();}catch(e){console.warn('renderError',name,e);}};
   safeRender(renderMetaProgress,'meta');
   safeRender(renderExtraProgress,'extra');
-  safeRender(renderEvolucao,'evolucao');
   safeRender(renderGestaoMissingReports,'missing-reports');
-  safeRender(renderRevenueTable,'revenue-table');
-  safeRender(renderDailyByChatter,'daily-chatter');
-  safeRender(renderDailyByModel,'daily-model');
-  safeRender(renderSemanaRevenue,'semana-rev');
-  safeRender(renderSemanaDesenvolvimento,'semana-dev');
   const cv=currentViewName();
+  _rts[cv]=0;
   safeRender(()=>renderView(cv),'current-view');
 
   exportLines.push(`TOTAL EQUIPE: ${money(totalEquipe)}`);
@@ -6343,25 +6359,80 @@ function saveFichaText(chatterId,store,key,val){
    =========================================================== */
 function renderTesters(){
   const sel=document.getElementById('tester-select');
+  const testers=S.chatters.filter(c=>c.time==='tester');
   if(sel){
     const cur=sel.value;
-    const testers=S.chatters.filter(c=>c.time==='tester');
-    sel.innerHTML='<option value="">— selecionar tester —</option>'+
+    sel.innerHTML='<option value="">— ver todos —</option>'+
       testers.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
     if(cur&&testers.find(t=>t.id===cur))sel.value=cur;
-    if(!cur&&testers.length===1){sel.value=testers[0].id;renderTesterDetail(testers[0].id);}
   }
-  if(document.getElementById('tester-select')?.value)
-    renderTesterDetail(document.getElementById('tester-select').value);
-  else{
-    const el=document.getElementById('tester-content');
-    if(el){
-      const testers=S.chatters.filter(c=>c.time==='tester');
-      el.innerHTML=testers.length
-        ?'<div style="color:var(--text3);font-size:13px">Selecione um tester acima</div>'
-        :`<div class="empty"><div class="empty-ic">🧪</div><div class="empty-ttl">Sem testers cadastrados</div><div class="empty-sub">Vá em Equipe, adicione um chatter e marque como 🧪 Tester</div></div>`;
-    }
+  const cid=document.getElementById('tester-select')?.value;
+  const el=document.getElementById('tester-content');
+  if(!el)return;
+
+  if(cid){
+    renderTesterDetail(cid);
+    return;
   }
+
+  if(!testers.length){
+    el.innerHTML=`<div class="empty"><div class="empty-ic">🧪</div><div class="empty-ttl">Sem testers</div><div class="empty-sub">Vá em Equipe e marque chatters como 🧪 Tester</div></div>`;
+    return;
+  }
+
+  // Build score for each tester based on logs
+  const scored=testers.map(c=>{
+    const logs=(S.testerLogs?.[c.id]||[]);
+    const days=logs.length;
+    // Score: more days = more data, count fortes vs fracos length ratio as proxy
+    const fortesLen=logs.reduce((s,l)=>s+(l.fortes?.length||0),0);
+    const fracosLen=logs.reduce((s,l)=>s+(l.fracos?.length||0),0);
+    // Use revenue if available
+    const rev=getChatterWeekRevenue(c.id)+getChatterExtraRevenue(c.id);
+    // Simple score: revenue weight 60%, fortes/fracos ratio 40%
+    const perfScore=rev>0?rev:(fortesLen>0&&fracosLen>0?(fortesLen/(fracosLen+1))*1000:days*100);
+    return{c,days,logs,rev,perfScore};
+  }).sort((a,b)=>b.perfScore-a.perfScore);
+
+  // Classify
+  const n=scored.length;
+  const topN=Math.max(1,Math.ceil(n/3));
+  const botN=Math.max(1,Math.floor(n/3));
+
+  const groups=[
+    {label:'🟢 Melhores',color:'var(--ok)',bg:'var(--ok-soft)',items:scored.slice(0,topN)},
+    {label:'🟡 Médios',color:'var(--warn)',bg:'var(--warn-soft)',items:scored.slice(topN,n-botN)},
+    {label:'🔴 Precisam de atenção',color:'var(--bad)',bg:'var(--bad-soft)',items:scored.slice(n-botN)},
+  ];
+
+  el.innerHTML=`
+    <div style="background:var(--bg-soft);border-radius:10px;padding:12px;margin-bottom:14px;font-size:12.5px;color:var(--text2)">
+      📊 <strong>${testers.length} testers</strong> classificados por performance (faturamento + registros diários).
+      Clique em qualquer um para ver o histórico completo.
+    </div>
+    ${groups.filter(g=>g.items.length).map(g=>`
+      <div style="margin-bottom:16px">
+        <div style="font-size:12px;font-weight:700;color:${g.color};text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">${g.label} (${g.items.length})</div>
+        ${g.items.map((item,rank)=>{
+          const {c,days,logs,rev}=item;
+          const lastLog=logs.length?logs[logs.length-1]:null;
+          return`<div style="display:flex;align-items:flex-start;gap:12px;padding:11px;background:var(--surface);border:1px solid var(--line);border-left:3px solid ${g.color};border-radius:9px;margin-bottom:7px;cursor:pointer"
+            onclick="document.getElementById('tester-select').value='${c.id}';renderTesterDetail('${c.id}')">
+            <div style="font-size:22px;font-weight:800;font-family:var(--font-mono);color:${g.color};min-width:28px;flex-shrink:0;line-height:1.2">${ranked(scored,item)}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:700;font-size:14px">${c.name} <span style="font-size:11px;color:var(--text3);font-weight:400">${c.level}</span></div>
+              <div style="font-size:11.5px;color:var(--text2);margin-top:2px">${days} dia${days!==1?'s':''} registrado${days!==1?'s':''}${rev>0?` · ${money(rev)} esta semana`:''}</div>
+              ${lastLog?`<div style="font-size:12px;color:var(--text3);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Último: ${lastLog.fortes||lastLog.fracos||lastLog.results||'—'}</div>`:''}
+            </div>
+            <div style="font-size:18px">›</div>
+          </div>`;
+        }).join('')}
+      </div>`).join('')}`;
+}
+
+function ranked(scored,item){
+  const i=scored.indexOf(item);
+  return i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}º`;
 }
 
 function renderTesterDetail(cid){
@@ -6580,9 +6651,123 @@ function renderPagamento(){
       <td style="padding:6px 10px;text-align:right;border-bottom:1px solid var(--line);color:var(--ok);font-weight:800">+${money(c.p100)}</td>
     </tr>`).join('');
   }
+  // Auto-populate chatters tab with all chatters
+  renderPagChattersAll();
   // Gerente chatters config
   renderGerChattersConfig();
   renderPagPreview();
+}
+
+function renderPagChattersAll(){
+  const el=document.getElementById('pag-chatters-all');
+  if(!el)return;
+  const chatters=S.chatters.filter(c=>c.time!=='elite'&&c.time!=='tester');
+  if(!chatters.length){el.innerHTML='';return;}
+  const wkey=getWeekKey();
+  const wd=getWeekDates();
+
+  el.innerHTML=`<div class="panel">
+    <div class="panel-head"><div class="panel-title">📋 Todos os chatters — semana atual</div><div class="panel-note">Edite faturamento, medalha e categoria para recalcular</div></div>
+    ${chatters.map(c=>{
+      // Get real week revenue
+      const weekRev=getChatterWeekRevenue(c.id);
+      const weekExtra=getChatterExtraRevenue(c.id);
+      // Get stored medal (from ficha or default)
+      const medal=parseInt(S.chatterFichas?.[c.id]?.medal||0);
+      // Get stored category (from goals)
+      const goals=S.chatterWeekGoals[wkey]||{};
+      const metaVal=parseFloat(goals[c.id])||0;
+      // Find category from meta
+      const cat=Object.entries(PAG_CATS).find(([k,v])=>metaVal>0&&metaVal<=v.n100)?.[0]||'B';
+      const ht=0; // no direct HT data per chatter easily, let user fill
+      const r=calcChatterPagamento(weekRev,medal,cat,ht,weekExtra);
+      const pct=weekRev>0&&PAG_CATS[cat]?Math.round(weekRev/PAG_CATS[cat].n100*100):0;
+      const col=pct>=100?'var(--ok)':pct>=85?'var(--warn)':pct>=70?'var(--info)':'var(--bad)';
+      return`<div style="background:var(--bg-soft);border-radius:10px;padding:12px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div style="font-weight:700;font-size:14px">${c.name} <span style="font-size:11px;color:var(--text3)">${c.level}</span></div>
+          <div style="font-size:18px;font-weight:800;font-family:var(--font-mono);color:var(--ok)">${money(r.totalComPiso)}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+          <div class="field" style="margin:0">
+            <label class="flabel">Faturamento (R$)</label>
+            <input type="number" class="finput" style="font-size:12px;padding:6px 8px"
+              value="${weekRev>0?Math.round(weekRev):''}" placeholder="${money(weekRev)||'0'}"
+              id="pag-c-fat-${c.id}" oninput="recalcChatterPag('${c.id}')">
+          </div>
+          <div class="field" style="margin:0">
+            <label class="flabel">Medalha</label>
+            <select class="fselect" style="font-size:12px;padding:6px 8px" id="pag-c-med-${c.id}" onchange="recalcChatterPag('${c.id}')">
+              ${[0,1,2,3,4].map(m=>`<option value="${m}" ${medal===m?'selected':''}>${PAG_MEDAL_LABEL[m]}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field" style="margin:0">
+            <label class="flabel">Categoria</label>
+            <select class="fselect" style="font-size:12px;padding:6px 8px" id="pag-c-cat-${c.id}" onchange="recalcChatterPag('${c.id}')">
+              ${['A','B','C','D','E'].map(k=>`<option value="${k}" ${cat===k?'selected':''}>${k} — meta ${money(PAG_CATS[k].n100)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">
+          <div class="field" style="margin:0">
+            <label class="flabel">High ticket (R$)</label>
+            <input type="number" class="finput" style="font-size:12px;padding:6px 8px" placeholder="soma das vendas ≥R$300"
+              id="pag-c-ht-${c.id}" oninput="recalcChatterPag('${c.id}')">
+          </div>
+          <div class="field" style="margin:0">
+            <label class="flabel">Hora extra (R$)</label>
+            <input type="number" class="finput" style="font-size:12px;padding:6px 8px"
+              value="${weekExtra>0?Math.round(weekExtra):''}" placeholder="${money(weekExtra)||'0'}"
+              id="pag-c-ext-${c.id}" oninput="recalcChatterPag('${c.id}')">
+          </div>
+        </div>
+        <div id="pag-c-result-${c.id}" style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px">
+          ${renderChatterPagCells(r,pct,col)}
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function renderChatterPagCells(r,pct,col){
+  return`
+    <div style="background:var(--bg);border-radius:7px;padding:7px;text-align:center">
+      <div style="font-size:9px;color:var(--text3)">Comissão</div>
+      <div style="font-size:12px;font-weight:700;font-family:var(--font-mono)">${money(r.comissao)}</div>
+    </div>
+    <div style="background:var(--bg);border-radius:7px;padding:7px;text-align:center">
+      <div style="font-size:9px;color:var(--text3)">Prêmio meta</div>
+      <div style="font-size:12px;font-weight:700;color:${r.premio>0?'var(--ok)':'var(--text3)'}">${money(r.premio)}</div>
+    </div>
+    <div style="background:var(--bg);border-radius:7px;padding:7px;text-align:center">
+      <div style="font-size:9px;color:var(--text3)">% meta</div>
+      <div style="font-size:12px;font-weight:800;color:${col}">${pct}%</div>
+    </div>
+    <div style="background:${r.pisoComp>0?'var(--warn-soft)':'var(--ok-soft)'};border-radius:7px;padding:7px;text-align:center">
+      <div style="font-size:9px;color:var(--text3)">Total</div>
+      <div style="font-size:12px;font-weight:800;color:${r.pisoComp>0?'var(--warn)':'var(--ok)'}">${money(r.totalComPiso)}</div>
+    </div>`;
+}
+
+function recalcChatterPag(cid){
+  const fat=parseFloat(document.getElementById('pag-c-fat-'+cid)?.value)||getChatterWeekRevenue(cid);
+  const medal=parseInt(document.getElementById('pag-c-med-'+cid)?.value||0);
+  const cat=document.getElementById('pag-c-cat-'+cid)?.value||'B';
+  const ht=parseFloat(document.getElementById('pag-c-ht-'+cid)?.value)||0;
+  const ext=parseFloat(document.getElementById('pag-c-ext-'+cid)?.value)||getChatterExtraRevenue(cid);
+  const r=calcChatterPagamento(fat,medal,cat,ht,ext);
+  const pct=fat>0&&PAG_CATS[cat]?Math.round(fat/PAG_CATS[cat].n100*100):0;
+  const col=pct>=100?'var(--ok)':pct>=85?'var(--warn)':pct>=70?'var(--info)':'var(--bad)';
+  const el=document.getElementById('pag-c-result-'+cid);
+  if(el)el.innerHTML=renderChatterPagCells(r,pct,col);
+  // Update header total
+  const cards=document.querySelectorAll(`[id="pag-c-result-${cid}"]`);
+  // Also update the big total at top of card
+  const parent=el?.closest('div[style*="background:var(--bg-soft)"]');
+  if(parent){
+    const totalEl=parent.querySelector('[style*="font-size:18px"]');
+    if(totalEl)totalEl.textContent=money(r.totalComPiso);
+  }
 }
 
 function renderPagPreview(){
@@ -6755,19 +6940,31 @@ function renderGerPreview(){
    =========================================================== */
 function renderProjecao(){
   const sel=document.getElementById('proj-chatter');
+  const chatters=S.chatters.filter(c=>c.time!=='elite'&&c.time!=='tester');
   if(sel){
     const cur=sel.value;
-    const chatters=S.chatters.filter(c=>c.time!=='elite'&&c.time!=='tester');
-    sel.innerHTML='<option value="">— selecionar chatter —</option>'+
+    sel.innerHTML='<option value="">— todos os chatters —</option>'+
       chatters.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
     if(cur)sel.value=cur;
-    if(!cur&&chatters.length===1){sel.value=chatters[0].id;renderProjecaoChatter(chatters[0].id);}
-    else if(cur)renderProjecaoChatter(cur);
+  }
+  const cid=document.getElementById('proj-chatter')?.value;
+  if(cid){
+    renderProjecaoChatter(cid);
+  } else {
+    // Show all chatters
+    const el=document.getElementById('proj-content');
+    if(!el)return;
+    if(!chatters.length){
+      el.innerHTML='<div class="empty"><div class="empty-ic">📈</div><div class="empty-ttl">Sem chatters</div></div>';
+      return;
+    }
+    el.innerHTML=chatters.map(c=>`<div id="proj-section-${c.id}"></div>`).join('');
+    chatters.forEach((c,i)=>setTimeout(()=>renderProjecaoChatter(c.id,`proj-section-${c.id}`),i*30));
   }
 }
 
-function renderProjecaoChatter(cid){
-  const el=document.getElementById('proj-content');
+function renderProjecaoChatter(cid,containerId){
+  const el=document.getElementById(containerId||'proj-content');
   if(!el)return;
   if(!cid){el.innerHTML='';return;}
   const c=S.chatters.find(ch=>ch.id===cid);

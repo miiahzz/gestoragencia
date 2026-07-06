@@ -849,9 +849,9 @@ body{
   <div class="view-title">Gestão</div>
 
   <!-- PERFIL DO GESTOR -->
-  <div class="panel" id="manager-profile-panel" style="background:var(--accent-soft);border:none">
+  <div class="panel" id="manager-profile-panel" style="background:var(--accent-soft);border:none;position:relative">
+    <button onclick="openModal('m-manager-profile')" style="position:absolute;top:10px;right:10px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--accent);opacity:.5;padding:4px" title="Editar perfil">✏️</button>
     <div id="manager-profile-display"></div>
-    <button class="btn btn-ghost btn-xs btn-block" style="margin-top:8px" onclick="openModal('m-manager-profile')">✏️ editar perfil</button>
   </div>
 
   <!-- ROTINA DA MANHÃ -->
@@ -866,7 +866,7 @@ body{
 
   <!-- PROBLEMAS PRA RESOLVER HOJE -->
   <div class="panel">
-    <div class="panel-head"><div class="panel-title">🔥 Problemas pra resolver hoje</div><span class="pill pill-bad" style="font-size:10px" id="problems-badge"></span></div>
+    <div class="panel-head"><div class="panel-title">📋 Tarefas do dia</div><span class="pill pill-bad" style="font-size:10px" id="problems-badge"></span></div>
     <div id="problems-list"></div>
     <div style="display:flex;gap:8px;margin-top:10px">
       <input class="finput" id="problems-input" placeholder="Descreva o problema..." style="flex:1">
@@ -1086,6 +1086,7 @@ body{
       </div>
     </div>
     <div id="pag-preview"></div>
+    <div id="pag-chatters-all"></div>
     <div class="panel" style="margin-top:8px">
       <div class="panel-head"><div class="panel-title">📊 Tabela de metas — todas as categorias</div></div>
       <div style="overflow-x:auto">
