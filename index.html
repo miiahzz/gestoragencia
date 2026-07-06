@@ -364,6 +364,8 @@ body{
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
       <span class="pill pill-flat" id="sync-badge" style="font-size:9.5px">💾 local</span>
+      <button onclick="exportBackup()" title="Exportar backup" style="background:none;border:none;cursor:pointer;font-size:14px;padding:2px 4px;opacity:.6" title="Exportar backup JSON">⬇️</button>
+      <button onclick="importBackup()" title="Importar backup" style="background:none;border:none;cursor:pointer;font-size:14px;padding:2px 4px;opacity:.6" title="Restaurar backup JSON">⬆️</button>
       <div class="topclock" id="hd-clock">00:00</div>
     </div>
   </div>
@@ -381,6 +383,9 @@ body{
     <button class="toptab" data-go="estudos">Estudos</button>
     <button class="toptab" data-go="evolucao">Evolução</button>
     <button class="toptab" data-go="chatlab">ChatLab</button>
+    <button class="toptab" data-go="testers">Testers</button>
+    <button class="toptab" data-go="pagamento">Pagamento</button>
+    <button class="toptab" data-go="projecao">Projeção</button>
     
   </nav>
 </header>
@@ -429,7 +434,6 @@ body{
   </div>
 
   <!-- RELATÓRIOS FALTANTES NO PAINEL -->
-  <div id="home-missing-reports"></div>
 
   <!-- DEMANDAS URGENTES -->
   <div id="home-demandas-urgentes"></div>
@@ -485,7 +489,6 @@ body{
 
   <div style="display:flex;gap:8px;margin-bottom:8px">
     <button class="btn btn-ghost btn-block btn-sm" onclick="openModal('m-swap')">⇄ troca</button>
-    <button class="btn btn-ghost btn-block btn-sm" onclick="openModal('m-overtime')">⚡ hora extra</button>
   </div>
 </section>
 
@@ -846,7 +849,7 @@ body{
   <div class="view-title">Gestão</div>
 
   <!-- PERFIL DO GESTOR -->
-  <div class="panel" id="manager-profile-panel" style="background:var(--accent-soft);border-color:var(--accent)">
+  <div class="panel" id="manager-profile-panel" style="background:var(--accent-soft);border:none">
     <div id="manager-profile-display"></div>
     <button class="btn btn-ghost btn-xs btn-block" style="margin-top:8px" onclick="openModal('m-manager-profile')">✏️ editar perfil</button>
   </div>
@@ -1018,6 +1021,143 @@ body{
 </section>
 
 
+<!-- ===================== TESTERS ===================== -->
+<section class="view" id="v-testers">
+  <div class="eyebrow">testes</div>
+  <div class="view-title">Testers</div>
+  <div class="view-sub">Acompanhe os resultados diários de cada tester</div>
+  <div style="margin-bottom:12px">
+    <select class="fselect" id="tester-select" onchange="renderTesterDetail(this.value)">
+      <option value="">— selecionar tester —</option>
+    </select>
+  </div>
+  <div id="tester-content"></div>
+</section>
+
+
+<!-- ===================== PAGAMENTO ===================== -->
+<section class="view" id="v-pagamento">
+  <div class="eyebrow">remuneração</div>
+  <div class="view-title">Pagamento</div>
+  <div class="view-sub">Previsão de ganhos — chatters e gerência</div>
+
+  <div style="display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:18px">
+    <button class="toptab active" id="pagtab-chatters" onclick="pagSwitchTab('chatters')" style="font-size:12.5px">👥 Chatters</button>
+    <button class="toptab" id="pagtab-gerente" onclick="pagSwitchTab('gerente')" style="font-size:12.5px">👔 Gerência</button>
+  </div>
+
+  <!-- CHATTERS -->
+  <div id="pagpane-chatters">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">⚙️ Configurar semana</div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field" style="margin:0">
+          <label class="flabel">Medalha do chatter</label>
+          <select class="fselect" id="pag-medalha" onchange="renderPagPreview()">
+            <option value="0">Sem medalha (4%)</option>
+            <option value="1">Bronze (4%)</option>
+            <option value="2">Prata (4.5%)</option>
+            <option value="3">Ouro (5%)</option>
+            <option value="4">Diamante (6%)</option>
+          </select>
+        </div>
+        <div class="field" style="margin:0">
+          <label class="flabel">Categoria semanal</label>
+          <select class="fselect" id="pag-cat" onchange="renderPagPreview()">
+            <option value="A">A — meta R$2.500–3.500</option>
+            <option value="B">B — meta R$3.500–5.000</option>
+            <option value="C">C — meta R$5.000–7.000</option>
+            <option value="D">D — meta R$7.000–10.000</option>
+            <option value="E">E — meta R$10.000–14.000</option>
+          </select>
+        </div>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label class="flabel">Faturamento semanal simulado (R$)</label>
+        <input type="number" class="finput" id="pag-fat" placeholder="Ex: 5000" oninput="renderPagPreview()">
+      </div>
+      <div class="field">
+        <label class="flabel">Vendas high ticket (R$300+) — total de comissões nessas vendas</label>
+        <input type="number" class="finput" id="pag-ht" placeholder="Ex: 1500 (soma das vendas ≥R$300)" oninput="renderPagPreview()">
+      </div>
+      <div class="field">
+        <label class="flabel">Hora extra faturada (modelo extra)</label>
+        <input type="number" class="finput" id="pag-extra" placeholder="Ex: 800" oninput="renderPagPreview()">
+      </div>
+    </div>
+    <div id="pag-preview"></div>
+    <div class="panel" style="margin-top:8px">
+      <div class="panel-head"><div class="panel-title">📊 Tabela de metas — todas as categorias</div></div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12.5px">
+          <thead><tr style="background:var(--bg-soft)">
+            <th style="padding:7px 10px;text-align:left;border-bottom:1px solid var(--line)">Cat.</th>
+            <th style="padding:7px 10px;text-align:right;border-bottom:1px solid var(--line)">70%</th>
+            <th style="padding:7px 10px;text-align:right;border-bottom:1px solid var(--line)">→ prêmio</th>
+            <th style="padding:7px 10px;text-align:right;border-bottom:1px solid var(--line)">85%</th>
+            <th style="padding:7px 10px;text-align:right;border-bottom:1px solid var(--line)">→ prêmio</th>
+            <th style="padding:7px 10px;text-align:right;border-bottom:1px solid var(--line)">100%</th>
+            <th style="padding:7px 10px;text-align:right;border-bottom:1px solid var(--line)">→ prêmio</th>
+          </tr></thead>
+          <tbody id="pag-meta-table"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- GERENTE -->
+  <div id="pagpane-gerente" style="display:none">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">⚙️ Simulador da gerência</div></div>
+      <div class="panel-note" style="margin-bottom:12px">Configure a meta e o faturamento de cada chatter para calcular sua premiação</div>
+      <div class="field">
+        <label class="flabel">Meta global da operação (mês)</label>
+        <input type="number" class="finput" id="ger-meta-global" placeholder="Ex: 100000" oninput="renderGerPreview()">
+      </div>
+      <div class="field">
+        <label class="flabel">Faturamento real da operação (mês)</label>
+        <input type="number" class="finput" id="ger-fat-global" placeholder="Ex: 115000" oninput="renderGerPreview()">
+      </div>
+      <div id="ger-chatters-config"></div>
+      <div id="ger-preview"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">📊 Tabela de premiação por chatter</div></div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12.5px">
+          <thead><tr style="background:var(--bg-soft)">
+            <th style="padding:7px 10px;text-align:left;border-bottom:1px solid var(--line)">% da meta</th>
+            <th style="padding:7px 10px;text-align:right;border-bottom:1px solid var(--line)">Sua fatia</th>
+            <th style="padding:7px 10px;text-align:left;border-bottom:1px solid var(--line)">Exemplo (meta R$20k)</th>
+          </tr></thead>
+          <tbody>
+            <tr><td style="padding:6px 10px;border-bottom:1px solid var(--line)">até 50%</td><td style="padding:6px 10px;text-align:right;border-bottom:1px solid var(--line)">2%</td><td style="padding:6px 10px;border-bottom:1px solid var(--line);color:var(--text3)">R$10k → R$200</td></tr>
+            <tr><td style="padding:6px 10px;border-bottom:1px solid var(--line)">50%–70%</td><td style="padding:6px 10px;text-align:right;border-bottom:1px solid var(--line)">4%</td><td style="padding:6px 10px;border-bottom:1px solid var(--line);color:var(--text3)">R$14k → R$420</td></tr>
+            <tr><td style="padding:6px 10px;border-bottom:1px solid var(--line)">70%–85%</td><td style="padding:6px 10px;text-align:right;border-bottom:1px solid var(--line)">6%</td><td style="padding:6px 10px;border-bottom:1px solid var(--line);color:var(--text3)">R$17k → R$540</td></tr>
+            <tr><td style="padding:6px 10px;border-bottom:1px solid var(--line)">85%–100%</td><td style="padding:6px 10px;text-align:right;border-bottom:1px solid var(--line)">9%</td><td style="padding:6px 10px;border-bottom:1px solid var(--line);color:var(--text3)">R$20k → R$810</td></tr>
+            <tr style="background:var(--ok-soft)"><td style="padding:6px 10px;border-bottom:1px solid var(--line)">100%–130% 🚀</td><td style="padding:6px 10px;text-align:right;border-bottom:1px solid var(--line);color:var(--ok)">10%</td><td style="padding:6px 10px;border-bottom:1px solid var(--line);color:var(--ok)">R$26k → R$1.170</td></tr>
+            <tr style="background:var(--ok-soft)"><td style="padding:6px 10px;border-bottom:1px solid var(--line)">130%–170% 🚀</td><td style="padding:6px 10px;text-align:right;border-bottom:1px solid var(--line);color:var(--ok)">11%</td><td style="padding:6px 10px;border-bottom:1px solid var(--line);color:var(--ok)">R$34k → R$2.050</td></tr>
+            <tr style="background:var(--ok-soft)"><td style="padding:6px 10px">acima 170% 🚀</td><td style="padding:6px 10px;text-align:right;color:var(--ok)">12%</td><td style="padding:6px 10px;color:var(--ok)">R$40k → R$3.010</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PROJEÇÃO ===================== -->
+<section class="view" id="v-projecao">
+  <div class="eyebrow">desenvolvimento</div>
+  <div class="view-title">Projeção</div>
+  <div class="view-sub">Análise mensal de rendimento e desenvolvimento de cada chatter</div>
+  <div style="margin-bottom:12px">
+    <select class="fselect" id="proj-chatter" onchange="renderProjecaoChatter(this.value)">
+      <option value="">— selecionar chatter —</option>
+    </select>
+  </div>
+  <div id="proj-content"></div>
+</section>
+
 <!-- ===================== CHATLAB ===================== -->
 <section class="view" id="v-chatlab">
   <div class="eyebrow">análise com IA</div>
@@ -1165,12 +1305,21 @@ body{
   </div>
 
   <div class="field"><label class="flabel">Dia de folga <span style="font-size:10.5px;color:var(--text3);font-weight:400">(gera vaga de hora extra automática)</span></label>
+    <div class="flabel" style="margin-bottom:4px">Folga 1</div>
     <div class="chiprow" id="shift-folga-chips">
-      <button class="chip chip-folga" data-folga="">Nenhum</button>
+      <button class="chip chip-folga" data-folga="">—</button>
       <button class="chip chip-folga" data-folga="seg">Seg</button><button class="chip chip-folga" data-folga="ter">Ter</button>
       <button class="chip chip-folga" data-folga="qua">Qua</button><button class="chip chip-folga" data-folga="qui">Qui</button>
       <button class="chip chip-folga" data-folga="sex">Sex</button><button class="chip chip-folga" data-folga="sab">Sáb</button>
       <button class="chip chip-folga" data-folga="dom">Dom</button>
+    </div>
+    <div class="flabel" style="margin:8px 0 4px">Folga 2 (opcional)</div>
+    <div class="chiprow" id="shift-folga2-chips">
+      <button class="chip chip-folga2" data-folga="">—</button>
+      <button class="chip chip-folga2" data-folga="seg">Seg</button><button class="chip chip-folga2" data-folga="ter">Ter</button>
+      <button class="chip chip-folga2" data-folga="qua">Qua</button><button class="chip chip-folga2" data-folga="qui">Qui</button>
+      <button class="chip chip-folga2" data-folga="sex">Sex</button><button class="chip chip-folga2" data-folga="sab">Sáb</button>
+      <button class="chip chip-folga2" data-folga="dom">Dom</button>
     </div>
   </div>
 
