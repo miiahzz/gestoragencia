@@ -376,12 +376,12 @@ body{
     <button class="toptab" data-go="fichas">Fichas</button>
     <button class="toptab" data-go="report">Relatório</button>
     <button class="toptab" data-go="extra">H. Extra</button>
-    <button class="toptab" data-go="teamreports">Rel. Equipe</button>
+    <button class="toptab" data-go="gerador">Relatórios</button>
     <button class="toptab" data-go="semana">Semana</button>
     <button class="toptab" data-go="estudos">Estudos</button>
     <button class="toptab" data-go="evolucao">Evolução</button>
     <button class="toptab" data-go="chatlab">ChatLab</button>
-    <button class="toptab" data-go="gerador">Gerador</button>
+    
   </nav>
 </header>
 
@@ -495,7 +495,11 @@ body{
 <!-- ===================== SEMANA ===================== -->
 <section class="view" id="v-semana">
   <div class="eyebrow">planejamento</div>
-  <div class="view-title">Semana <span id="semana-range" style="color:var(--text3);font-weight:400;font-size:15px"></span></div>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px">
+    <div class="view-title" style="margin:0">Semana</div>
+    <div class="week-nav" id="week-nav-semana"></div>
+  </div>
+  <div id="semana-range" style="color:var(--text3);font-size:13px;margin-bottom:20px"></div>
 
   <div class="panel">
     <div class="panel-head">
@@ -637,7 +641,10 @@ body{
 <!-- ===================== RELATÓRIO SEMANAL ===================== -->
 <section class="view" id="v-report">
   <div class="eyebrow">gestão</div>
-  <div class="view-title">Relatório Semanal</div>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px">
+    <div class="view-title" style="margin:0">Relatório</div>
+    <div class="week-nav" id="week-nav-report"></div>
+  </div>
   <div class="view-sub" id="report-wk-range">—</div>
 
   <!-- Seção 1: Visão Geral — preenchida automaticamente -->
@@ -734,29 +741,101 @@ body{
 </section>
 
 <!-- ===================== RELATÓRIOS DA EQUIPE ===================== -->
-<section class="view" id="v-teamreports">
-  <div class="eyebrow">equipe</div>
-  <div class="view-title">Relatórios da Equipe</div>
-  <div class="view-sub">Cole os relatórios gerados pelo sistema e o app extrai os dados automaticamente</div>
+<section class="view" id="v-gerador">
+  <div class="eyebrow">relatórios de venda</div>
+  <div class="view-title">Relatórios</div>
 
-  <div class="panel">
-    <div class="panel-head">
-      <div><div class="panel-title">📨 Colar relatórios</div><div class="panel-note">Cole todos os relatórios juntos no campo abaixo</div></div>
+  <!-- TABS INTERNAS -->
+  <div style="display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:18px">
+    <button class="toptab active" id="reltab-gerador" onclick="relSwitchTab('gerador')" style="font-size:12.5px">📄 Gerar</button>
+    <button class="toptab" id="reltab-editor" onclick="relSwitchTab('editor')" style="font-size:12.5px">✏️ Editar</button>
+    <button class="toptab" id="reltab-processar" onclick="relSwitchTab('processar')" style="font-size:12.5px">📊 Processar</button>
+  </div>
+
+  <!-- ── GERAR ── -->
+  <div id="relpane-gerador">
+    <div class="panel">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field" style="margin:0"><label class="flabel">Data do relatório</label><input type="date" class="finput" id="ger-data"></div>
+        <div class="field" style="margin:0"><label class="flabel">Canal</label><input class="finput" id="ger-canal" value="PRIVACY FREE" onblur="S.geradorCanal=this.value;save();"></div>
+      </div>
     </div>
-    <textarea class="ftext" id="teamreport-input" style="min-height:180px;font-family:var(--font-mono);font-size:12px" placeholder="Cole aqui os relatórios da equipe...&#10;&#10;Data: 01/07/2026&#10;Nome: Luiz Emanuel&#10;MOMOI PRIVACY FREE&#10;..."></textarea>
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn btn-primary btn-block" onclick="parseTeamReports()">📊 Processar relatórios</button>
-      <button class="btn btn-ghost btn-xs" onclick="document.getElementById('teamreport-input').value='';document.getElementById('teamreport-results').innerHTML=''">✕</button>
+
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">📊 Planilhas dos modelos</div><div class="panel-note">XLSX exportado do Privacy</div></div>
+      <div id="ger-sheets"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div><div class="panel-title">👥 Meu time</div><div class="panel-note">Cole o log do Discord e clique em Interpretar</div></div>
+        <button class="btn btn-ghost btn-xs" onclick="gerAddMeu()">+ manual</button>
+      </div>
+      <div class="field">
+        <label class="flabel">Log do Discord</label>
+        <textarea class="ftext" id="ger-discord" style="min-height:90px;font-family:var(--font-mono);font-size:12px" placeholder="1. Guilherme — Ontem às 15:27&#10;ON (Momoi)&#10;2. Guilherme — Ontem às 23:00&#10;OFF (Momoi)&#10;3. Zanlith2 — Ontem às 16:07&#10;ON (Arruda) - HORA EXTRA"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="btn btn-primary btn-sm" onclick="gerInterpretar()">🔍 Interpretar</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('ger-discord').value=''">Limpar</button>
+      </div>
+      <div id="ger-meu-cards"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div><div class="panel-title">🌐 Time externo</div><div class="panel-note">Nome, modelo e horários — vendas excluídas dos seus relatórios</div></div>
+        <button class="btn btn-ghost btn-xs" onclick="gerAddExt()">+ chatter</button>
+      </div>
+      <div id="ger-ext-cards"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div><div class="panel-title">⭐ Time Elite</div><div class="panel-note">Cole nome, modelo e vendas brutas — comissões são subtraídas do time básico</div></div>
+        <button class="btn btn-ghost btn-xs" onclick="gerAddElite()">+ chatter</button>
+      </div>
+      <div class="panel-note" style="margin-bottom:10px">Formato: cole as vendas brutas com horário — o app calcula as comissões automaticamente usando a planilha do modelo</div>
+      <div id="ger-elite-cards"></div>
+    </div>
+
+    <button class="btn btn-primary btn-block" onclick="gerarRelatorios()" style="margin-bottom:12px">📄 Gerar todos os relatórios</button>
+    <div id="ger-out"></div>
+  </div>
+
+  <!-- ── EDITOR ── -->
+  <div id="relpane-editor" style="display:none">
+    <div class="panel">
+      <div class="panel-head">
+        <div><div class="panel-title">✏️ Editar / corrigir relatório</div><div class="panel-note">Cole um relatório com erro, corrija e copie para a planilha</div></div>
+      </div>
+      <textarea class="ftext" id="ger-editor" style="min-height:220px;font-family:var(--font-mono);font-size:12px" placeholder="Cole aqui o relatório para editar..."></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="gerCopyEditor()">📋 Copiar</button>
+        <button class="btn btn-primary btn-sm" onclick="gerProcessarEditor()">→ Processar no faturamento</button>
+      </div>
     </div>
   </div>
 
-  <div id="teamreport-results"></div>
-
-  <div id="teamreport-summary" style="display:none">
+  <!-- ── PROCESSAR ── -->
+  <div id="relpane-processar" style="display:none">
     <div class="panel">
-      <div class="panel-head"><div class="panel-title">📋 Resumo para envio</div></div>
-      <textarea class="ftext" id="teamreport-export" readonly style="min-height:300px;font-family:var(--font-mono);font-size:11.5px;line-height:1.7" onclick="this.select()"></textarea>
-      <button class="btn btn-primary btn-block" style="margin-top:10px" onclick="copyTeamReport()">📋 Copiar tudo</button>
+      <div class="panel-head">
+        <div><div class="panel-title">📨 Colar e processar relatórios</div><div class="panel-note">Cole todos juntos — o app extrai os dados</div></div>
+      </div>
+      <textarea class="ftext" id="teamreport-input" style="min-height:180px;font-family:var(--font-mono);font-size:12px" placeholder="Cole aqui os relatórios...&#10;&#10;Data: 01/07/2026&#10;Nome: Luiz Emanuel&#10;MOMOI PRIVACY FREE&#10;..."></textarea>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-primary btn-block" onclick="parseTeamReports()">📊 Processar</button>
+        <button class="btn btn-ghost btn-xs" onclick="document.getElementById('teamreport-input').value='';document.getElementById('teamreport-results').innerHTML=''">✕</button>
+      </div>
+    </div>
+    <div id="teamreport-results"></div>
+    <div id="teamreport-summary" style="display:none">
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">📋 Resumo para envio</div></div>
+        <textarea class="ftext" id="teamreport-export" readonly style="min-height:300px;font-family:var(--font-mono);font-size:11.5px;line-height:1.7" onclick="this.select()"></textarea>
+        <button class="btn btn-primary btn-block" style="margin-top:10px" onclick="copyTeamReport()">📋 Copiar tudo</button>
+      </div>
     </div>
   </div>
 </section>
@@ -880,26 +959,19 @@ body{
 
 <!-- ===================== ESTUDOS ===================== -->
 <section class="view" id="v-estudos">
-  <div class="eyebrow">desenvolvimento</div>
-  <div class="view-title">Rotina de Estudos</div>
+  <div class="eyebrow">desenvolvimento pessoal</div>
+  <div class="view-title">Estudos</div>
 
+  <!-- O QUE MELHORAR -->
   <div class="panel">
     <div class="panel-head">
-      <div><div class="panel-title">💪 Pontos fortes e fracos</div></div>
-      <button class="btn btn-soft btn-xs" onclick="saveEstudosSnapshot()">💾 salvar</button>
+      <div><div class="panel-title">💪 O que melhorar e como</div><div class="panel-note">Feitos somem na virada da semana</div></div>
+      <button class="btn btn-primary btn-xs" onclick="addMelhora()">+ adicionar</button>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:12px;color:var(--text2);min-width:90px;flex-shrink:0">✅ Forte 1</label><input class="finput" id="estudos-fortes1" placeholder="..." onblur="saveEstudosDraft()" style="flex:1"></div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:12px;color:var(--text2);min-width:90px;flex-shrink:0">✅ Forte 2</label><input class="finput" id="estudos-fortes2" placeholder="..." onblur="saveEstudosDraft()" style="flex:1"></div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:12px;color:var(--text2);min-width:90px;flex-shrink:0">✅ Forte 3</label><input class="finput" id="estudos-fortes3" placeholder="..." onblur="saveEstudosDraft()" style="flex:1"></div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:12px;color:var(--text2);min-width:90px;flex-shrink:0">⚠️ Melhorar 1</label><input class="finput" id="estudos-fracos1" placeholder="..." onblur="saveEstudosDraft()" style="flex:1"></div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:12px;color:var(--text2);min-width:90px;flex-shrink:0">⚠️ Melhorar 2</label><input class="finput" id="estudos-fracos2" placeholder="..." onblur="saveEstudosDraft()" style="flex:1"></div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:12px;color:var(--text2);min-width:90px;flex-shrink:0">⚠️ Melhorar 3</label><input class="finput" id="estudos-fracos3" placeholder="..." onblur="saveEstudosDraft()" style="flex:1"></div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:12px;color:var(--text2);min-width:90px;flex-shrink:0">🎯 Foco 1</label><input class="finput" id="estudos-foco1" placeholder="..." onblur="saveEstudosDraft()" style="flex:1"></div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:12px;color:var(--text2);min-width:90px;flex-shrink:0">🎯 Foco 2</label><input class="finput" id="estudos-foco2" placeholder="..." onblur="saveEstudosDraft()" style="flex:1"></div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:12px;color:var(--text2);min-width:90px;flex-shrink:0">🎯 Foco 3</label><input class="finput" id="estudos-foco3" placeholder="..." onblur="saveEstudosDraft()" style="flex:1"></div>
-    <button class="btn btn-primary btn-block" style="margin-top:10px" onclick="saveEstudosSnapshot()">💾 Salvar snapshot desta semana</button>
+    <div id="melhoras-list"></div>
   </div>
 
+  <!-- MATERIAIS DE ESTUDO -->
   <div class="panel">
     <div class="panel-head">
       <div class="panel-title">📚 Materiais de estudo</div>
@@ -908,9 +980,28 @@ body{
     <div id="study-list"></div>
   </div>
 
+  <!-- HISTÓRICO DE EVOLUÇÃO PESSOAL -->
   <div class="panel">
-    <div class="panel-head"><div class="panel-title">📈 Histórico de evolução</div></div>
+    <div class="panel-head">
+      <div><div class="panel-title">📈 Histórico de evolução pessoal</div></div>
+      <button class="btn btn-ghost btn-xs" onclick="saveEstudosSnapshot()">💾 snapshot</button>
+    </div>
     <div id="estudos-historico"></div>
+  </div>
+
+  <!-- CONSELHEIRO EXECUTIVO (discreto, collapsible) -->
+  <div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:12px">
+    <button onclick="toggleConselheiro()" style="width:100%;padding:11px 14px;background:var(--bg-soft);border:none;cursor:pointer;font-family:var(--font-display);display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text2)">
+      <span>🧠 Conselheiro Executivo</span>
+      <span id="conselheiro-ic" style="font-size:11px;color:var(--text3)">▸</span>
+    </button>
+    <div id="conselheiro-body" style="display:none;padding:14px">
+      <div class="field">
+        <textarea class="ftext" id="conselheiro-input" style="min-height:100px" placeholder="Descreva a situação — ex: um chatter com queda de performance, conflito na equipe, decisão difícil..."></textarea>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="conselheiro-btn" onclick="rodarConselheiro()">💬 Consultar</button>
+      <div id="conselheiro-out" style="margin-top:12px"></div>
+    </div>
   </div>
 </section>
 
@@ -918,8 +1009,11 @@ body{
 <!-- ===================== EVOLUÇÃO ===================== -->
 <section class="view" id="v-evolucao">
   <div class="eyebrow">desenvolvimento</div>
-  <div class="view-title">Evolução</div>
-  <div class="view-sub">Resumo automático de toda a equipe + você</div>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px">
+    <div class="view-title" style="margin:0">Evolução</div>
+    <div class="week-nav" id="week-nav-evolucao"></div>
+  </div>
+  <div class="view-sub">Semana analisada + histórico por chatter</div>
   <div id="evolucao-content"></div>
 </section>
 
@@ -957,46 +1051,7 @@ body{
   </div>
 </section>
 
-<!-- ===================== GERADOR ===================== -->
-<section class="view" id="v-gerador">
-  <div class="eyebrow">relatórios de venda</div>
-  <div class="view-title">Gerador</div>
-  <div class="view-sub">Suba as planilhas dos modelos, monte os turnos e gere os relatórios prontos</div>
 
-  <div class="panel">
-    <div class="panel-head"><div class="panel-title">📊 Planilhas dos modelos</div><div class="panel-note">XLSX exportado do Privacy</div></div>
-    <div id="ger-sheets"></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-head">
-      <div><div class="panel-title">Configuração</div></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div class="field" style="margin:0"><label class="flabel">Data do relatório</label><input type="date" class="finput" id="ger-data"></div>
-      <div class="field" style="margin:0"><label class="flabel">Canal</label><input class="finput" id="ger-canal" value="PRIVACY FREE" onblur="S.geradorCanal=this.value;save();"></div>
-    </div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-head">
-      <div><div class="panel-title">👥 Meu time</div><div class="panel-note">Turnos do seu time neste dia</div></div>
-      <button class="btn btn-primary btn-xs" onclick="gerAddChatter('geradorMeu')">+ chatter</button>
-    </div>
-    <div id="ger-meu-cards"></div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-head">
-      <div><div class="panel-title">🌐 Time externo</div><div class="panel-note">Vendas deles são excluídas dos seus relatórios</div></div>
-      <button class="btn btn-ghost btn-xs" onclick="gerAddChatter('geradorExt')">+ chatter</button>
-    </div>
-    <div id="ger-ext-cards"></div>
-  </div>
-
-  <button class="btn btn-primary btn-block" onclick="gerarRelatorios()">📄 Gerar relatórios</button>
-  <div id="ger-out" style="margin-top:14px"></div>
-</section>
 
 </main>
 
@@ -1008,7 +1063,7 @@ body{
   <button class="navbtn" data-go="time"><span class="navbtn-ic">▦</span><span class="navbtn-lb">Equipe</span></button>
   <button class="navbtn" data-go="fichas"><span class="navbtn-ic">👤</span><span class="navbtn-lb">Fichas</span></button>
   <button class="navbtn" data-go="extra"><span class="navbtn-ic">⚡</span><span class="navbtn-lb">H.Extra</span></button>
-  <button class="navbtn" data-go="teamreports"><span class="navbtn-ic">📨</span><span class="navbtn-lb">Rel.Equipe</span></button>
+  <button class="navbtn" data-go="gerador"><span class="navbtn-ic">📄</span><span class="navbtn-lb">Relatórios</span></button>
 </nav>
 </div>
 

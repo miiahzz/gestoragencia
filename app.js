@@ -41,6 +41,11 @@ function migrateState(s){
   if(!s.geradorMeu)s.geradorMeu=[];
   if(!s.geradorExt)s.geradorExt=[];
   if(!s.geradorCanal)s.geradorCanal='PRIVACY FREE';
+  if(!s.geradorElite)s.geradorElite=[];
+  if(!s.melhoras)s.melhoras=[];
+  else{const wk=getWeekKey();s.melhoras=s.melhoras.filter(m=>!m.done||m.doneWeek===wk);}
+  if(!s.melhoraHistory)s.melhoraHistory=[];
+  if(!s.estudosDraft2)s.estudosDraft2={};
   if(Array.isArray(s.shifts))s.shifts=s.shifts.map(sh=>({start2:'',end2:'',folgaDia:'',modelIds:[],...sh}));
   if(!s.chatterTrainings)s.chatterTrainings=[];
   if(s.hasSeededStudies===undefined)s.hasSeededStudies=false;
@@ -272,6 +277,10 @@ let S={
   geradorMeu:[],         // gerador: chatters do meu time [{name, model, intervals:[{s,e,extra}]}]
   geradorExt:[],         // gerador: time externo
   geradorCanal:'PRIVACY FREE',
+  geradorElite:[],         // [{name, model, salesRaw:'', sales:[{hora,bruto}]}]
+  melhoras:[],           // [{id,text,how,done,doneWeek,createdWeek}]
+  melhoraHistory:[],     // snapshots [{week,items:[{text,how,done}]}]
+  estudosDraft2:{},      // misc draft
   semanaObjetivos:{},    // weekKey -> [{id, label, valor, done}]
   modelRequestsSplit:{}, // weekKey -> {modelId: text}
   demandas2:[],          // persistent list [{id,text,date,done}] — does NOT reset daily
@@ -319,18 +328,51 @@ function fmt(d){return`${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate()
 function nowHHMM(){const n=new Date();return p2(n.getHours())+':'+p2(n.getMinutes());}
 function todayKey(){return fmt(new Date());}
 function getTodayDayKey(){return DAY_KEYS[new Date().getDay()];}
-function getWeekDates(){
-  // Week starts SUNDAY (evolução semanal medida a partir de domingo)
-  const now=new Date(),dow=now.getDay(); // 0=Dom
-  const sun=new Date(now);sun.setDate(now.getDate()-dow);
+// weekOffset: 0=current, -1=last week, -2=two weeks ago, etc.
+let weekOffset=0;
+
+function getWeekDates(offset){
+  const off=offset!==undefined?offset:weekOffset;
+  const now=new Date(),dow=now.getDay();
+  const sun=new Date(now);sun.setDate(now.getDate()-dow + off*7);
   return Array.from({length:7},(_,i)=>{const d=new Date(sun);d.setDate(sun.getDate()+i);return d;});
 }
-function getWeekKey(){const wd=getWeekDates();return fmt(wd[0]);}
+function getWeekKey(offset){const wd=getWeekDates(offset!==undefined?offset:weekOffset);return fmt(wd[0]);}
+function weekLabel(offset){
+  const o=offset!==undefined?offset:weekOffset;
+  if(o===0)return'Esta semana';
+  if(o===-1)return'Semana passada';
+  const wd=getWeekDates(o);
+  return wd[0].getDate()+'/'+(wd[0].getMonth()+1)+' – '+wd[6].getDate()+'/'+(wd[6].getMonth()+1);
+}
+function setWeekOffset(o){
+  weekOffset=o;
+  // re-render all week-sensitive views
+  const v=currentViewName();
+  if(v==='semana')renderSemana();
+  if(v==='report')renderReport_Weekly();
+  if(v==='evolucao')renderEvolucao();
+  renderWeekNav();
+}
+function renderWeekNav(){
+  document.querySelectorAll('.week-nav').forEach(el=>{
+    const now=getWeekDates(0);
+    const wd=getWeekDates();
+    const label=weekLabel();
+    const isNow=weekOffset===0;
+    el.innerHTML=`<div style="display:flex;align-items:center;gap:6px">
+      <button onclick="setWeekOffset(weekOffset-1)" style="background:var(--bg-soft);border:1px solid var(--line);border-radius:7px;padding:4px 10px;cursor:pointer;font-size:14px;color:var(--text2)">‹</button>
+      <div style="font-size:12.5px;font-weight:600;color:var(--text2);min-width:140px;text-align:center">${label}${isNow?' <span style="font-size:10px;color:var(--ok)">(atual)</span>':''}</div>
+      <button onclick="setWeekOffset(weekOffset+1)" ${isNow?'disabled style="opacity:.3;cursor:not-allowed"':''} style="background:var(--bg-soft);border:1px solid var(--line);border-radius:7px;padding:4px 10px;cursor:pointer;font-size:14px;color:var(--text2)">›</button>
+      ${!isNow?`<button onclick="setWeekOffset(0)" style="background:var(--accent-soft);border:none;border-radius:7px;padding:4px 9px;cursor:pointer;font-size:11px;font-weight:600;color:var(--accent)">hoje</button>`:''}
+    </div>`;
+  });
+}
 function money(n){return 'R$ '+ (n||0).toLocaleString('pt-BR',{minimumFractionDigits:2});}
 function moneyShort(n){return 'R$'+(n||0).toLocaleString('pt-BR',{maximumFractionDigits:0});}
 
 // ---------- NAV ----------
-const VIEWS=['home','turno','semana','time','fat','report','extra','teamreports','gestao','fichas','estudos','evolucao','chatlab','gerador'];
+const VIEWS=['home','turno','semana','time','fat','report','extra','gerador','gestao','fichas','estudos','evolucao','chatlab'];
 function navTo(view){
   if(!view)return;
   VIEWS.forEach(v=>{const el=document.getElementById('v-'+v);if(el)el.classList.remove('active');});
@@ -348,13 +390,13 @@ function renderView(v){
   if(v==='fat')renderFat();
   if(v==='report')renderReport_Weekly();
   if(v==='extra')renderExtra();
-  if(v==='teamreports')renderTeamReports();
+  if(v==='gerador')renderGerador();
   if(v==='gestao')renderGestao();
   if(v==='fichas')renderFichas();
   if(v==='estudos')renderEstudos();
   if(v==='evolucao')renderEvolucao();
   if(v==='chatlab')renderChatLab();
-  if(v==='gerador')renderGerador();
+
 }
 document.querySelectorAll('.toptab,.navbtn').forEach(el=>el.addEventListener('click',()=>navTo(el.dataset.go)));
 
@@ -567,6 +609,7 @@ function deleteTask(id){
    FEATURE 3 — WEEKLY GOALS (team-level planning)
    =========================================================== */
 function renderSemana(){
+  renderWeekNav();
   renderWeekOrients();
   const wk=getWeekDates();
   document.getElementById('semana-range').textContent=`${wk[0].getDate()}/${wk[0].getMonth()+1} – ${wk[6].getDate()}/${wk[6].getMonth()+1}`;
@@ -2434,6 +2477,7 @@ function refreshChatterDetailTrainings(chatterId){
    dados do app. Seções 5, 7, 8 são manuais (com rascunho salvo).
    =========================================================== */
 function renderReport_Weekly(){
+  renderWeekNav();
   const wd=getWeekDates();
   const wkey=getWeekKey();
   const goals=S.chatterWeekGoals[wkey]||{};
@@ -4664,15 +4708,6 @@ function saveEstudosDraft(){
   });
   save();
 }
-function renderEstudos(){
-  const d=S.estudosDraft||{};
-  ['fortes1','fortes2','fortes3','fracos1','fracos2','fracos3','foco1','foco2','foco3'].forEach(k=>{
-    const el=document.getElementById('estudos-'+k);
-    if(el&&!el.value)el.value=d[k]||'';
-  });
-  renderStudyList();
-  renderEstudosHistorico();
-}
 function saveEstudosSnapshot(){
   saveEstudosDraft();
   const d=S.estudosDraft;
@@ -4681,19 +4716,6 @@ function saveEstudosSnapshot(){
   if(!S.estudosHistory)S.estudosHistory=[];
   S.estudosHistory.push({date:todayKey(),...d});
   save();renderEstudosHistorico();toast('✅ Snapshot salvo!');
-}
-function renderEstudosHistorico(){
-  const el=document.getElementById('estudos-historico');
-  if(!el)return;
-  const history=S.estudosHistory||[];
-  if(!history.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px;padding:8px 0">Nenhum snapshot ainda. Preencha e clique "💾 Salvar snapshot".</div>';return;}
-  el.innerHTML=[...history].reverse().map((snap,i)=>`
-    <div style="padding:12px 0;border-bottom:1px solid var(--line)">
-      <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:8px">${snap.date}${i===0?' · <span style="color:var(--ok)">mais recente</span>':''}</div>
-      ${[1,2,3].map(n=>snap['fortes'+n]?`<div style="margin-bottom:4px"><span style="font-size:11px;font-weight:700;color:var(--ok)">✅ FORTE ${n}</span><div style="font-size:13px;margin-top:2px">${snap['fortes'+n]}</div></div>`:'').join('')}
-      ${[1,2,3].map(n=>snap['fracos'+n]?`<div style="margin-bottom:4px"><span style="font-size:11px;font-weight:700;color:var(--warn)">⚠️ MELHORAR ${n}</span><div style="font-size:13px;margin-top:2px">${snap['fracos'+n]}</div></div>`:'').join('')}
-      ${[1,2,3].map(n=>snap['foco'+n]?`<div style="margin-bottom:4px"><span style="font-size:11px;font-weight:700;color:var(--info)">🎯 FOCO ${n}</span><div style="font-size:13px;margin-top:2px">${snap['foco'+n]}</div></div>`:'').join('')}
-    </div>`).join('');
 }
 
 /* ===========================================================
@@ -4888,6 +4910,7 @@ function calcEvolutionPct(chatterId){
 }
 
 function renderEvolucao(){
+  renderWeekNav();
   const el=document.getElementById('evolucao-content');
   if(!el)return;
   const wkey=getWeekKey();
@@ -5528,28 +5551,6 @@ function sendTrainingToWeek(cid){
    GERADOR DE RELATÓRIOS (aba integrada, sem Discord)
    =========================================================== */
 let gerSheets={}; // modelName(UPPER) -> rows (session only, not persisted)
-function renderGerador(){
-  // Sheets uploads per model
-  const sh=document.getElementById('ger-sheets');
-  if(sh){
-    if(!S.models.length){sh.innerHTML='<div style="color:var(--text3);font-size:12.5px">Cadastre modelos na aba Faturamento primeiro</div>';}
-    else sh.innerHTML=S.models.map(m=>{
-      const key=m.name.toUpperCase();
-      const n=gerSheets[key]?.length;
-      return`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
-        <div style="font-size:13.5px;font-weight:700;flex:1">${m.emoji||'🧩'} ${m.name}</div>
-        <span class="pill ${n?'pill-ok':'pill-flat'}">${n?n+' linhas':'sem planilha'}</span>
-        <label class="btn btn-ghost btn-xs" style="cursor:pointer">📂 subir XLSX<input type="file" accept=".xlsx,.xls" style="display:none" onchange="gerLoadXlsx(event,'${key}')"></label>
-      </div>`;
-    }).join('');
-  }
-  const canal=document.getElementById('ger-canal');
-  if(canal)canal.value=S.geradorCanal||'PRIVACY FREE';
-  const dt=document.getElementById('ger-data');
-  if(dt&&!dt.value)dt.value=todayKey();
-  renderGerCards('geradorMeu','ger-meu-cards');
-  renderGerCards('geradorExt','ger-ext-cards');
-}
 function gerLoadXlsx(e,modelKey){
   const f=e.target.files[0];if(!f)return;
   if(typeof XLSX==='undefined'){toast('❌ Biblioteca XLSX não carregou — recarregue a página');return;}
@@ -5654,10 +5655,13 @@ function gerarRelatorios(){
   const canal=(document.getElementById('ger-canal')?.value.trim()||'PRIVACY FREE').toUpperCase();
   const meu=(S.geradorMeu||[]).filter(c=>c.name);
   const ext=(S.geradorExt||[]).filter(c=>c.name);
-  if(!meu.length&&!ext.length){out.innerHTML='<div class="panel" style="color:var(--text3);font-size:13px">Adicione chatters com o botão + antes de gerar</div>';return;}
+  const elite=(S.geradorElite||[]).filter(c=>c.name);
+  if(!meu.length&&!ext.length&&!elite.length){
+    out.innerHTML='<div class="panel" style="color:var(--text3);font-size:13px">Adicione chatters antes de gerar</div>';return;
+  }
   const dateStr=dataVal?dataVal.split('-').reverse().join('/'):'--/--/----';
 
-  // sales times of ext team per model → excluded from meu reports
+  // Collect ext hours per model to exclude from meu reports
   const extTimes={};
   ext.forEach(c=>{
     const sales=gerSalesFor(c,null)||[];
@@ -5665,38 +5669,115 @@ function gerarRelatorios(){
     sales.forEach(s=>extTimes[c.model].add(s.hora));
   });
 
-  let html='';const allTexts=[];
-  const renderGroup=(list,title,useExcl)=>{
+  // Collect elite sale hours per model to subtract from meu
+  const eliteTimes={};
+  elite.forEach(c=>{
+    const parsed=parseEliteSales(c.salesRaw);
+    if(!eliteTimes[c.model])eliteTimes[c.model]=new Set();
+    parsed.forEach(s=>eliteTimes[c.model].add(s.hora));
+  });
+
+  let html='';
+  const allTexts=[];
+
+  const renderGroup=(list,title,useExcl,useEliteExcl)=>{
     if(!list.length)return;
     html+=`<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 8px">${title}</div>`;
-    list.forEach((c,i)=>{
-      const r=gerBuildText(c,dateStr,canal,useExcl?(extTimes[c.model]||null):null);
-      if(r.warn){html+=`<div class="panel" style="border-color:var(--warn);padding:10px 14px;font-size:12.5px"><strong>${c.name}</strong> — ⚠️ ${r.warn}</div>`;return;}
+    list.forEach((c,idx)=>{
+      const excl=new Set([
+        ...(useExcl?(extTimes[c.model]||[]):[]),
+        ...(useEliteExcl?(eliteTimes[c.model]||[]):[])
+      ]);
+      const r=gerBuildText(c,dateStr,canal,excl.size?excl:null);
+      if(r.warn){
+        html+=`<div class="panel" style="border-color:var(--warn);padding:10px 14px;font-size:12.5px"><strong>${c.name}</strong> — ⚠️ ${r.warn}</div>`;
+        return;
+      }
       allTexts.push(r.text);
-      const tid='gtx'+title.length+'_'+i;
+      window._gerTexts=window._gerTexts||{};
+      window._gerTexts[title+'_'+idx]=r.text;
+      const tid='gtx_'+title.replace(/\s/g,'')+'_'+idx;
       html+=`<div class="panel" style="padding:0;overflow:hidden">
         <div style="padding:10px 14px;background:var(--bg-soft);display:flex;align-items:center;justify-content:space-between">
           <div style="font-weight:700;font-size:13.5px">${c.name} <span style="font-size:11px;color:var(--text3)">${c.model}</span></div>
-          <div style="display:flex;align-items:center;gap:10px">
+          <div style="display:flex;align-items:center;gap:8px">
             <span style="font-family:var(--font-mono);font-weight:800;color:var(--ok)">${money(r.total)}</span>
-            <button class="btn btn-ghost btn-xs" onclick="gerCopy('${tid}')">📋 copiar</button>
+            <button class="btn btn-ghost btn-xs" onclick="gerCopyTid('${tid}')">📋 copiar</button>
           </div>
         </div>
-        <pre id="${tid}" style="margin:0;padding:12px 14px;font-family:var(--font-mono);font-size:11.5px;white-space:pre-wrap;color:var(--text2)">${r.text}</pre>
+        <pre id="${tid}" style="margin:0;padding:12px 14px;font-family:var(--font-mono);font-size:11.5px;white-space:pre-wrap;color:var(--text2);line-height:1.7">${r.text}</pre>
       </div>`;
     });
   };
-  renderGroup(meu,'Meu time',true);
-  renderGroup(ext,'Time externo',false);
+
+  // Elite team — build from parsed sales using sheet commissions
+  if(elite.length){
+    html+=`<div style="font-size:11px;font-weight:700;color:var(--warn);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 8px">⭐ Time Elite</div>`;
+    elite.forEach((c,idx)=>{
+      const parsed=parseEliteSales(c.salesRaw);
+      if(!parsed.length){
+        html+=`<div class="panel" style="border-color:var(--warn);padding:10px 14px;font-size:12.5px"><strong>${c.name}</strong> — ⚠️ Sem vendas encontradas (verifique o formato)</div>`;
+        return;
+      }
+      // Get commissions from sheet
+      let salesWithCom=[];
+      let total=0;
+      parsed.forEach(s=>{
+        const com=gerGetComissao(s.hora,c.model,s.bruto);
+        const val=com!==null?com:s.bruto*0.3; // fallback 30%
+        salesWithCom.push({hora:s.hora,val});
+        total+=val;
+      });
+      const ivStr=parsed.length?`${parsed[0].hora} às ${parsed[parsed.length-1].hora}`:'';
+      const lines=[
+        'Data: '+dateStr,
+        'Nome: '+c.name,
+        c.model+' - '+canal,
+        ivStr,
+        ...salesWithCom.map(s=>s.hora+' - R$ '+s.val.toFixed(2).replace('.',',')),
+        'Total de comissões: R$ '+total.toFixed(2).replace('.',',')
+      ].join('\n');
+      allTexts.push(lines);
+      const tid='gtx_elite_'+idx;
+      html+=`<div class="panel" style="padding:0;overflow:hidden;border-color:var(--warn)">
+        <div style="padding:10px 14px;background:var(--warn-soft);display:flex;align-items:center;justify-content:space-between">
+          <div style="font-weight:700;font-size:13.5px">${c.name} <span style="font-size:11px;color:var(--warn)">⭐ ${c.model}</span></div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-family:var(--font-mono);font-weight:800;color:var(--warn)">${money(total)}</span>
+            <button class="btn btn-ghost btn-xs" onclick="gerCopyTid('${tid}')">📋 copiar</button>
+          </div>
+        </div>
+        <pre id="${tid}" style="margin:0;padding:12px 14px;font-family:var(--font-mono);font-size:11.5px;white-space:pre-wrap;color:var(--text2);line-height:1.7">${lines}</pre>
+      </div>`;
+    });
+  }
+
+  window._gerAllTexts=allTexts.join('\n\n');
+  renderGroup(meu,'👥 Meu time',true,true);
+  renderGroup(ext,'🌐 Time externo',false,false);
 
   if(allTexts.length){
-    window._gerAllTexts=allTexts.join('\n\n');
-    html+=`<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+    html+=`<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
       <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(window._gerAllTexts).then(()=>toast('📋 Todos copiados!'))">📋 Copiar todos</button>
-      <button class="btn btn-primary btn-sm" onclick="gerEnviarRelEquipe()">→ Processar no Rel. Equipe</button>
+      <button class="btn btn-primary btn-sm" onclick="gerProcessarTodos()">→ Processar todos no faturamento</button>
     </div>`;
   }
-  out.innerHTML=html;
+  out.innerHTML=html||'<div style="color:var(--text3);font-size:13px">Nenhum resultado</div>';
+}
+
+function gerCopyTid(id){
+  const el=document.getElementById(id);
+  if(!el)return;
+  navigator.clipboard?.writeText(el.textContent.trim()).then(()=>toast('📋 Copiado!'));
+}
+
+function gerProcessarTodos(){
+  if(!window._gerAllTexts){toast('⚠️ Gere os relatórios primeiro');return;}
+  const inp=document.getElementById('teamreport-input');
+  if(inp)inp.value=window._gerAllTexts;
+  relSwitchTab('processar');
+  parseTeamReports();
+  toast('✅ Todos os relatórios processados!');
 }
 function gerCopy(id){
   const el=document.getElementById(id);
@@ -5711,3 +5792,456 @@ function gerEnviarRelEquipe(){
   parseTeamReports();
   toast('✅ Relatórios processados no Rel. Equipe!');
 }
+
+/* ===========================================================
+   REL TABS (inner tabs on Relatórios view)
+   =========================================================== */
+function relSwitchTab(tab){
+  ['gerador','editor','processar'].forEach(t=>{
+    const pane=document.getElementById('relpane-'+t);
+    if(pane)pane.style.display=t===tab?'block':'none';
+    const btn=document.getElementById('reltab-'+t);
+    if(btn)btn.classList.toggle('active',t===tab);
+  });
+  if(tab==='gerador')renderGerador();
+}
+
+/* ===========================================================
+   GERADOR — Discord-paste approach for meu time
+   =========================================================== */
+function gerAddChatterMeu(){
+  S.geradorMeu.push({name:'',model:S.models[0]?.name.toUpperCase()||'',intervals:[]});
+  save();renderGerMeuCards();
+}
+function gerAddMeu(){
+  gerAddChatterMeu();
+}
+function gerAddChatterExt(){
+  S.geradorExt.push({name:'',model:S.models[0]?.name.toUpperCase()||'',intervals:[{s:'',e:'',extra:false}]});
+  save();renderGerExtCards();
+}
+function gerAddExt(){ gerAddChatterExt(); }
+
+// Interpret entire Discord log at once → populate meu time cards
+function gerInterpretar(){
+  const txt=document.getElementById('ger-discord')?.value.trim();
+  if(!txt){toast('⚠️ Cole o log do Discord primeiro');return;}
+  const lines=txt.split('\n').map(l=>l.trim()).filter(Boolean);
+  const pairs=[];let i=0;
+  while(i<lines.length){
+    const cur=lines[i];const next=lines[i+1]||'';
+    const hasTime=/(\d{1,2}:\d{2})/.test(cur);const hasSep=/[—–\-]/.test(cur);
+    if(!hasTime&&hasSep){pairs.push({main:cur+' '+next,status:lines[i+2]||''});i+=3;}
+    else if(hasSep&&/^\s*(ON|OFF)\b/i.test(next)){pairs.push({main:cur,status:next});i+=2;}
+    else{i++;}
+  }
+  const events=[];
+  for(const {main,status} of pairs){
+    const ntm=main.match(/^(?:\d+\.\s*)?(.+?)\s*[—–\-]\s*(?:[^\d]*?)(\d{1,2}:\d{2})\s*$/);
+    if(!ntm)continue;
+    const name=ntm[1].trim().replace(/,\s*$/,'').trim();
+    let time=ntm[2].padStart(5,'0');
+    const modelM=status.match(/\(([^)]+)\)/);
+    const model=modelM?modelM[1].trim().toUpperCase():null;
+    if(!model)continue;
+    const isOn=/\bON\b/i.test(status);const isOff=/\bOFF\b/i.test(status);
+    const extra=/hora\s*extra|extra/i.test(status);
+    const overM=status.match(/-\s*(\d{1,2}:\d{2})\s*(?:$|\b(?!\d))/);
+    if(overM)time=overM[1].padStart(5,'0');
+    if(!isOn&&!isOff)continue;
+    events.push({name,model,time,isOn,isOff,extra});
+  }
+  const map={};
+  for(const e of events){
+    const key=e.name+'||'+e.model;
+    if(!map[key])map[key]={name:e.name,model:e.model,ons:[],offs:[]};
+    if(e.isOn)map[key].ons.push({time:e.time,extra:e.extra});
+    if(e.isOff)map[key].offs.push({time:e.time,extra:e.extra});
+  }
+  const result=[];
+  for(const key in map){
+    const g=map[key];
+    const intervals=[];
+    const len=Math.max(g.ons.length,g.offs.length);
+    for(let i=0;i<len;i++)
+      intervals.push({s:g.ons[i]?.time||'',e:g.offs[i]?.time||'',extra:g.ons[i]?.extra||g.offs[i]?.extra||false});
+    result.push({name:g.name,model:g.model,intervals});
+  }
+  if(!result.length){toast('⚠️ Nenhum ON/OFF encontrado — verifique o formato');return;}
+  S.geradorMeu=result;
+  save();renderGerMeuCards();
+  toast('✅ '+result.length+' chatter'+(result.length>1?'s':'')+' interpretado'+(result.length>1?'s':''));
+}
+function gerCopyEditor(){
+  const txt=document.getElementById('ger-editor')?.value;
+  if(!txt){toast('⚠️ Nada para copiar');return;}
+  navigator.clipboard?.writeText(txt).then(()=>toast('📋 Copiado!'));
+}
+function gerProcessarEditor(){
+  const txt=document.getElementById('ger-editor')?.value.trim();
+  if(!txt){toast('⚠️ Cole um relatório primeiro');return;}
+  const inp=document.getElementById('teamreport-input');
+  if(inp)inp.value=txt;
+  parseTeamReports();
+  toast('✅ Relatório processado no faturamento!');
+}
+
+function renderGerador(){
+  // sheets
+  const sh=document.getElementById('ger-sheets');
+  if(sh){
+    if(!S.models.length)sh.innerHTML='<div style="color:var(--text3);font-size:12.5px">Cadastre modelos na aba Equipe primeiro</div>';
+    else sh.innerHTML=S.models.map(m=>{
+      const key=m.name.toUpperCase();
+      const n=gerSheets[key]?.length;
+      return`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
+        <div style="font-size:13.5px;font-weight:700;flex:1">${m.emoji||'🧩'} ${m.name}</div>
+        <span class="pill ${n?'pill-ok':'pill-flat'}">${n?n+' linhas':'sem planilha'}</span>
+        <label class="btn btn-ghost btn-xs" style="cursor:pointer">📂 subir XLSX
+          <input type="file" accept=".xlsx,.xls" style="display:none" onchange="gerLoadXlsx(event,'${key}')">
+        </label>
+      </div>`;
+    }).join('');
+  }
+  const canal=document.getElementById('ger-canal');
+  if(canal)canal.value=S.geradorCanal||'PRIVACY FREE';
+  const dt=document.getElementById('ger-data');
+  if(dt&&!dt.value)dt.value=todayKey();
+  renderGerMeuCards();
+  renderGerExtCards();
+}
+
+function renderGerMeuCards(){
+  const el=document.getElementById('ger-meu-cards');
+  if(!el)return;
+  const list=S.geradorMeu||[];
+  if(!list.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px;padding:4px 0">Clique em + chatter para adicionar</div>';return;}
+  el.innerHTML=list.map((c,ci)=>`
+    <div style="background:var(--bg-soft);border-radius:10px;padding:12px;margin-bottom:10px">
+      <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+        <input class="finput" style="flex:2" placeholder="Nome" value="${c.name||''}" list="ger-namelist"
+          onblur="S.geradorMeu[${ci}].name=this.value;save();">
+        <select class="fselect" style="flex:1"
+          onchange="S.geradorMeu[${ci}].model=this.value;save();">
+          ${S.models.map(m=>`<option value="${m.name.toUpperCase()}" ${(c.model||'')===(m.name.toUpperCase())?'selected':''}>${m.name}</option>`).join('')}
+        </select>
+        <button onclick="S.geradorMeu.splice(${ci},1);save();renderGerMeuCards();"
+          style="background:none;border:none;color:var(--bad);cursor:pointer;font-size:16px;flex-shrink:0">✕</button>
+      </div>
+      <div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:4px">📋 Entradas/saídas do Discord</div>
+      <textarea class="ftext" style="min-height:80px;font-size:12px;font-family:var(--font-mono)"
+        placeholder="Cole aqui as entradas/saídas do Discord para ${c.name||'este chatter'}&#10;Ex:&#10;Guilherme — Ontem às 23:00&#10;ON (Momoi)&#10;Guilherme — Ontem às 07:02&#10;OFF (Momoi)"
+        onblur="S.geradorMeu[${ci}].discordRaw=this.value;save();">${c.discordRaw||''}</textarea>
+      <button class="btn btn-ghost btn-xs" style="margin-top:6px" onclick="gerInterpretarDiscord(${ci})">🔄 Interpretar entradas</button>
+      ${(c.intervals&&c.intervals.length)?`<div style="margin-top:8px">`+c.intervals.map((iv,ii)=>`
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px">
+          <input class="finput" style="width:82px;font-family:var(--font-mono)" placeholder="início" value="${iv.s||''}"
+            onblur="S.geradorMeu[${ci}].intervals[${ii}].s=this.value;save();">
+          <span style="color:var(--text3);font-size:12px">às</span>
+          <input class="finput" style="width:82px;font-family:var(--font-mono)" placeholder="fim" value="${iv.e||''}"
+            onblur="S.geradorMeu[${ci}].intervals[${ii}].e=this.value;save();">
+          <label style="display:flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text2);cursor:pointer;flex-shrink:0">
+            <input type="checkbox" style="width:auto" ${iv.extra?'checked':''}
+              onchange="S.geradorMeu[${ci}].intervals[${ii}].extra=this.checked;save();">⚡extra
+          </label>
+          <button onclick="S.geradorMeu[${ci}].intervals.splice(${ii},1);save();renderGerMeuCards();"
+            style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px">✕</button>
+        </div>`).join('')+`
+        <button class="btn btn-ghost btn-xs" onclick="S.geradorMeu[${ci}].intervals.push({s:'',e:'',extra:false});save();renderGerMeuCards();">+ intervalo</button>
+        </div>`:
+        '<div style="font-size:11.5px;color:var(--text3);margin-top:6px">Cole o Discord acima e clique Interpretar — ou adicione os horários manualmente</div>'}
+    </div>`).join('')+`<datalist id="ger-namelist">${S.chatters.map(c=>`<option value="${c.name}">`).join('')}</datalist>`;
+}
+
+function gerInterpretarDiscord(ci){
+  const c=S.geradorMeu[ci];
+  if(!c||!c.discordRaw?.trim()){toast('⚠️ Cole o texto do Discord primeiro');return;}
+  const parsed=gerParseDiscord(c.discordRaw);
+  // Merge intervals (keep existing manual entries)
+  if(parsed.length){
+    c.intervals=parsed;
+    save();renderGerMeuCards();
+    toast('✅ '+parsed.length+' intervalo(s) interpretado(s)');
+  } else {
+    toast('⚠️ Não encontrei entradas/saídas no texto');
+  }
+}
+
+function gerParseDiscord(txt){
+  const lines=txt.split('\n').map(l=>l.trim()).filter(Boolean);
+  const events=[];
+  for(let i=0;i<lines.length;i++){
+    const line=lines[i];
+    const next=lines[i+1]||'';
+    const timeM=line.match(/(\d{1,2}:\d{2})/);
+    if(!timeM)continue;
+    const time=timeM[1].padStart(5,'0');
+    const onOffLine=(/\bON\b/i.test(next)||/\bOFF\b/i.test(next))?next:line;
+    const isOn=/\bON\b/i.test(onOffLine);
+    const isOff=/\bOFF\b/i.test(onOffLine);
+    const extra=/hora\s*extra|extra/i.test(onOffLine);
+    if(isOn||isOff) events.push({time,isOn,isOff,extra});
+  }
+  const intervals=[];
+  let pending=null;
+  for(const e of events){
+    if(e.isOn){
+      pending={s:e.time,e:'',extra:e.extra};
+    } else if(e.isOff&&pending){
+      pending.e=e.time;
+      intervals.push(pending);
+      pending=null;
+    }
+  }
+  if(pending)intervals.push(pending); // open-ended
+  return intervals;
+}
+
+function renderGerExtCards(){
+  const el=document.getElementById('ger-ext-cards');
+  if(!el)return;
+  const list=S.geradorExt||[];
+  if(!list.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px;padding:4px 0">Clique em + chatter para adicionar</div>';return;}
+  el.innerHTML=list.map((c,ci)=>`
+    <div style="background:var(--bg-soft);border-radius:10px;padding:12px;margin-bottom:10px">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <input class="finput" style="flex:2" placeholder="Nome" value="${c.name||''}"
+          onblur="S.geradorExt[${ci}].name=this.value;save();">
+        <select class="fselect" style="flex:1" onchange="S.geradorExt[${ci}].model=this.value;save();">
+          ${S.models.map(m=>`<option value="${m.name.toUpperCase()}" ${(c.model||'')===(m.name.toUpperCase())?'selected':''}>${m.name}</option>`).join('')}
+        </select>
+        <button onclick="S.geradorExt.splice(${ci},1);save();renderGerExtCards();"
+          style="background:none;border:none;color:var(--bad);cursor:pointer;font-size:16px">✕</button>
+      </div>
+      <div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:4px">⏱ Horários trabalhados</div>
+      ${(c.intervals||[]).map((iv,ii)=>`
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px">
+          <input class="finput" style="width:82px;font-family:var(--font-mono)" placeholder="início" value="${iv.s||''}"
+            onblur="S.geradorExt[${ci}].intervals[${ii}].s=this.value;save();">
+          <span style="color:var(--text3);font-size:12px">às</span>
+          <input class="finput" style="width:82px;font-family:var(--font-mono)" placeholder="fim" value="${iv.e||''}"
+            onblur="S.geradorExt[${ci}].intervals[${ii}].e=this.value;save();">
+          <button onclick="S.geradorExt[${ci}].intervals.splice(${ii},1);save();renderGerExtCards();"
+            style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px">✕</button>
+        </div>`).join('')}
+      <button class="btn btn-ghost btn-xs" onclick="S.geradorExt[${ci}].intervals.push({s:'',e:'',extra:false});save();renderGerExtCards();">+ horário</button>
+    </div>`).join('');
+}
+
+/* ===========================================================
+   ESTUDOS — O QUE MELHORAR
+   =========================================================== */
+function renderMelhoras(){
+  const el=document.getElementById('melhoras-list');
+  if(!el)return;
+  const wk=getWeekKey();
+  // Prune done items from previous weeks
+  S.melhoras=S.melhoras.filter(m=>!m.done||m.doneWeek===wk);
+  if(!S.melhoras.length){
+    el.innerHTML='<div style="color:var(--text3);font-size:12.5px;padding:6px 0">Clique em + adicionar para criar um item</div>';return;
+  }
+  el.innerHTML=S.melhoras.map(m=>`
+    <div style="border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin-bottom:9px;${m.done?'opacity:.6':''}">
+      <div style="display:flex;align-items:flex-start;gap:9px">
+        <button onclick="toggleMelhora('${m.id}')" style="width:20px;height:20px;border-radius:5px;border:2px solid ${m.done?'var(--ok)':'var(--accent)'};background:${m.done?'var(--ok)':'transparent'};cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;margin-top:1px">${m.done?'<span style="color:#fff">✓</span>':''}</button>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13.5px;font-weight:700;${m.done?'text-decoration:line-through;color:var(--text3)':''};margin-bottom:5px">${m.text}</div>
+          <textarea class="ftext" style="min-height:46px;font-size:12.5px;${m.done?'opacity:.5':''}" placeholder="Como melhorar..."
+            onblur="saveMelhoraHow('${m.id}',this.value)">${m.how||''}</textarea>
+        </div>
+        <button onclick="removeMelhora('${m.id}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;flex-shrink:0">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+// Modal for adding melhora
+function addMelhora(){
+  const text=prompt('O que melhorar?');
+  if(!text?.trim())return;
+  S.melhoras.push({id:'ml'+Date.now(),text:text.trim(),how:'',done:false,doneWeek:null,createdWeek:getWeekKey()});
+  save();renderMelhoras();
+}
+function toggleMelhora(id){
+  const m=S.melhoras.find(x=>x.id===id);
+  if(!m)return;
+  m.done=!m.done;
+  m.doneWeek=m.done?getWeekKey():null;
+  // When marking done, auto-save snapshot entry
+  if(m.done) gerMelhoraSnapshot(m);
+  save();renderMelhoras();
+}
+function removeMelhora(id){
+  S.melhoras=S.melhoras.filter(x=>x.id!==id);
+  save();renderMelhoras();
+}
+function saveMelhoraHow(id,val){
+  const m=S.melhoras.find(x=>x.id===id);
+  if(m){m.how=val;save();}
+}
+function gerMelhoraSnapshot(melhora){
+  // Save to melhoraHistory for the personal evolution log
+  if(!S.melhoraHistory)S.melhoraHistory=[];
+  const wk=getWeekKey();
+  let entry=S.melhoraHistory.find(e=>e.week===wk);
+  if(!entry){entry={week:wk,items:[]};S.melhoraHistory.push(entry);}
+  if(!entry.items.find(x=>x.id===melhora.id)){
+    entry.items.push({id:melhora.id,text:melhora.text,how:melhora.how,doneDate:todayKey()});
+  }
+}
+
+function renderEstudosHistorico(){
+  const el=document.getElementById('estudos-historico');
+  if(!el)return;
+  const hist=S.melhoraHistory||[];
+  if(!hist.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px">Histórico vazio — marque itens como concluídos para registrar a evolução</div>';return;}
+  el.innerHTML=[...hist].reverse().map(entry=>`
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:6px">Semana de ${entry.week}</div>
+      ${entry.items.map(it=>`
+        <div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)">
+          <span style="color:var(--ok);font-size:13px;flex-shrink:0">✅</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600">${it.text}</div>
+            ${it.how?`<div style="font-size:12px;color:var(--text2);margin-top:2px">↳ ${it.how}</div>`:''}
+            <div style="font-size:10.5px;color:var(--text3);margin-top:2px">${it.doneDate}</div>
+          </div>
+        </div>`).join('')}
+    </div>`).join('');
+}
+
+function renderEstudos(){
+  renderMelhoras();
+  renderStudyList();
+  renderEstudosHistorico();
+}
+
+/* ===========================================================
+   CONSELHEIRO EXECUTIVO (IA discreta)
+   =========================================================== */
+function toggleConselheiro(){
+  const body=document.getElementById('conselheiro-body');
+  const ic=document.getElementById('conselheiro-ic');
+  if(!body)return;
+  const open=body.style.display!=='none';
+  body.style.display=open?'none':'block';
+  if(ic)ic.textContent=open?'▸':'▾';
+}
+
+const CONSELHEIRO_SYSTEM=`Você é meu Conselheiro Executivo de Liderança.
+
+Seu único objetivo é transformar minha equipe em uma equipe de alta performance enquanto me desenvolve como uma líder respeitada, admirada e capaz de extrair o máximo potencial de cada pessoa.
+
+Você atua como uma combinação de: CEO experiente, Diretora de Operações, Psicóloga Organizacional, Coach Executivo, Especialista em Comunicação Persuasiva, Negociação, Gestão de Conflitos, Motivação, Performance, Feedback e Construção de Autoridade.
+
+Antes de responder, analise: personalidade, interesses, motivações, inseguranças, ego, objetivos, maturidade, inteligência emocional, perfil comportamental, cultura da equipe, impacto de curto e longo prazo.
+
+Sempre responda com esta estrutura:
+## Diagnóstico — O que realmente está acontecendo?
+## Causas — Por que isso aconteceu?
+## Riscos — O que pode acontecer se nada mudar?
+## Estratégia — Qual a melhor forma de agir?
+## Plano de ação — Passo a passo.
+## Comunicação — Escreva exatamente o que devo dizer (quando necessário).
+## Erros a evitar — Principais erros que piorariam a situação.
+## Princípio de liderança — Qual princípio sustenta sua recomendação.
+
+Desafie minhas decisões. Se eu estiver errada, diga. Se minha decisão for emocional, aponte. Se houver alternativa melhor, apresente. Seu compromisso é com a eficácia, não com concordar comigo.
+
+Seja direto, estratégico e nunca superficial.`;
+
+async function rodarConselheiro(){
+  const inp=document.getElementById('conselheiro-input');
+  const out=document.getElementById('conselheiro-out');
+  const btn=document.getElementById('conselheiro-btn');
+  const text=inp?.value.trim();
+  if(!text){toast('⚠️ Descreva a situação');return;}
+  btn.disabled=true;btn.textContent='Consultando…';
+  out.innerHTML='<div style="color:var(--text2);font-size:12.5px;padding:10px 0">⏳ Analisando…</div>';
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:2000,
+        system:CONSELHEIRO_SYSTEM,
+        messages:[{role:'user',content:text}]
+      })
+    });
+    const data=await res.json();
+    const reply=data.content?.map(b=>b.type==='text'?b.text:'').join('')||'';
+    if(!reply)throw new Error(data.error?.message||'Resposta vazia');
+    out.innerHTML=`<div style="border-top:1px solid var(--line);padding-top:12px;margin-top:4px">${clMd(reply)}</div>`;
+  }catch(err){
+    out.innerHTML=`<div style="color:var(--bad);font-size:12.5px">❌ ${err.message}</div>`;
+  }finally{
+    btn.disabled=false;btn.textContent='💬 Consultar';
+  }
+}
+
+/* ===========================================================
+   GERADOR — ELITE TEAM (vendas brutas → comissões subtraídas)
+   =========================================================== */
+function gerAddElite(){
+  S.geradorElite.push({name:'',model:S.models[0]?.name.toUpperCase()||'',salesRaw:''});
+  save();renderGerEliteCards();
+}
+function renderGerEliteCards(){
+  const el=document.getElementById('ger-elite-cards');
+  if(!el)return;
+  const list=S.geradorElite||[];
+  if(!list.length){el.innerHTML='<div style="color:var(--text3);font-size:12.5px;padding:4px 0">Nenhum chatter Elite — use o botão + acima</div>';return;}
+  el.innerHTML=list.map((c,ci)=>`
+    <div style="background:var(--warn-soft);border:1px solid rgba(154,91,0,.2);border-radius:10px;padding:12px;margin-bottom:10px">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <input class="finput" style="flex:2" placeholder="Nome do chatter Elite" value="${c.name||''}"
+          onblur="S.geradorElite[${ci}].name=this.value;save();">
+        <select class="fselect" style="flex:1" onchange="S.geradorElite[${ci}].model=this.value;save();">
+          ${S.models.map(m=>`<option value="${m.name.toUpperCase()}" ${(c.model||'')===(m.name.toUpperCase())?'selected':''}>${m.name}</option>`).join('')}
+        </select>
+        <button onclick="S.geradorElite.splice(${ci},1);save();renderGerEliteCards();"
+          style="background:none;border:none;color:var(--bad);cursor:pointer;font-size:16px">✕</button>
+      </div>
+      <label class="flabel">Vendas brutas com horário</label>
+      <textarea class="ftext" style="min-height:80px;font-size:12px;font-family:var(--font-mono)"
+        placeholder="HH:MM - R$ XX,XX&#10;Ex:&#10;01:23 - R$ 150,00&#10;03:45 - R$ 280,00&#10;Ou cole direto do Privacy"
+        onblur="S.geradorElite[${ci}].salesRaw=this.value;save();">${c.salesRaw||''}</textarea>
+    </div>`).join('');
+}
+
+function parseEliteSales(raw){
+  // Parse lines like "01:23 - R$ 150,00" or "01:23 R$150,00"
+  const sales=[];
+  (raw||'').split('\n').forEach(line=>{
+    const m=line.match(/(\d{1,2}:\d{2})\s*[-–]?\s*R\$\s*([\d.,]+)/i);
+    if(!m)return;
+    const hora=m[1].padStart(5,'0');
+    const val=parseFloat(m[2].replace(/\./g,'').replace(',','.'));
+    if(val>0)sales.push({hora,bruto:val});
+  });
+  return sales;
+}
+
+// Get commission rate from sheet (if available) or fallback
+function gerGetComissao(hora,modelKey,bruto){
+  const sheet=gerSheets[modelKey];
+  if(!sheet)return null;
+  // Look for matching sale by hora and bruto in sheet
+  for(const row of sheet){
+    const h=(row['Hora']||'').toString().substring(0,5);
+    if(h===hora){
+      const com=parseFloat(row['Sua comissão']||0);
+      if(com>0)return com;
+    }
+  }
+  // Fallback: use % from sheet average if no exact match
+  const valid=['Chat','Mimo - Chat'];
+  let totalBruto=0,totalCom=0;
+  for(const row of sheet){
+    const tipo=(row['Tipo de entrada']||'').trim();
+    if(!valid.includes(tipo))continue;
+    const vb=parseFloat(row['Valor bruto']||row['Valor']||0);
+    const vc=parseFloat(row['Sua comissão']||0);
+    if(vb>0&&vc>0){totalBruto+=vb;totalCom+=vc;}
+  }
+  if(totalBruto>0&&totalCom>0)return bruto*(totalCom/totalBruto);
+  return null;
+}
+
