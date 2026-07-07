@@ -291,6 +291,7 @@ function listenToFirestore(connectTimeout){
           fbSyncStatus='online';updateSyncBadge();
           return;
         }
+        let needsInitialPush=false;
         if(doc.exists){
           const remote=doc.data();
           if(remote&&remote.payload){
@@ -307,14 +308,20 @@ function listenToFirestore(connectTimeout){
               scheduleRerenderAfterSync();
             }catch(e){console.error('Erro ao processar snapshot '+docId,e);}
           }
-        } else if(!fbDocsSeen.has(docId)){
-          // Documento novo (ex: primeira vez rodando com sharding, ou
-          // primeiro uso do app) — cria a partir do S atual (já carregado
-          // do localStorage antes do Firebase conectar)
-          pushToFirestore();
+        } else {
+          needsInitialPush=true; // documento ainda não existe (ex: primeiro uso, ou fatia nova do sharding)
         }
+        // IMPORTANTE: marca como "visto" ANTES de decidir qualquer coisa.
+        // Nunca cria/sobrescreve um documento baseado só no estado local
+        // até termos confirmado o que já existe em TODOS os documentos —
+        // isso evita que um envio precoce (antes da sincronização inicial
+        // terminar) apague dados reais que só existiam no Firestore.
         fbDocsSeen.add(docId);
-        if(fbDocsSeen.size>=ALL_SYNC_DOC_IDS.length)fbHasReceivedFirstSnapshot=true;
+        const wasAllSeenBefore=fbHasReceivedFirstSnapshot;
+        const allSeen=fbDocsSeen.size>=ALL_SYNC_DOC_IDS.length;
+        if(allSeen)fbHasReceivedFirstSnapshot=true;
+        if(needsInitialPush&&allSeen)pushToFirestore();
+        else if(allSeen&&!wasAllSeenBefore)pushToFirestore(); // sincronização inicial completa agora — envia qualquer mudança que ficou represada esperando
         fbSyncStatus='online';
         updateSyncBadge();
         runAutoBackupIfNeeded();
@@ -331,6 +338,14 @@ function listenToFirestore(connectTimeout){
 let lastSizeWarningAt=0;
 function pushToFirestore(){
   if(!fbDb||!fbReady)return;
+  if(fbDocsSeen.size<ALL_SYNC_DOC_IDS.length){
+    // Ainda não confirmamos o que já existe em TODOS os documentos —
+    // nunca escreve nada antes disso, pra nunca sobrescrever dados reais
+    // com um estado local que ainda não incorporou o que está no Firestore.
+    // A próxima ação do usuário (ou o fim da sincronização inicial) vai
+    // disparar um novo save() e tentar de novo.
+    return;
+  }
   const core={};
   Object.keys(S).forEach(k=>{if(!SHARD_FIELDS.includes(k))core[k]=S[k];});
   const jobs=[{id:FIREBASE_DOC_ID,data:core}];
