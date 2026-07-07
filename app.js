@@ -98,6 +98,40 @@ function migrateState(s){
 // o mais recente de cada data, em vez de acumular repetidos).
 function pruneHeavyData(s){
   try{
+    // Remove duplicatas estruturalmente idênticas em arrays sem "id" — o
+    // bug antigo de mesclagem duplicava esses itens a cada sincronização.
+    // Compara por conteúdo (JSON.stringify), preservando a ordem.
+    const dedupeByContent=arr=>{
+      if(!Array.isArray(arr)||arr.length<2)return arr;
+      const seen=new Set();const out=[];
+      arr.forEach(v=>{
+        const key=typeof v==='object'&&v!==null?JSON.stringify(v):v;
+        if(!seen.has(key)){seen.add(key);out.push(v);}
+      });
+      return out;
+    };
+    if(s.turnoLog){
+      Object.keys(s.turnoLog).forEach(dk=>{s.turnoLog[dk]=dedupeByContent(s.turnoLog[dk]);});
+    }
+    if(Array.isArray(s.geradorElite))s.geradorElite=dedupeByContent(s.geradorElite).filter(c=>c&&(c.name||c.salesRaw));
+    if(Array.isArray(s.geradorMeu))s.geradorMeu=dedupeByContent(s.geradorMeu);
+    if(s.midnightTasks){
+      // Mantém só UMA tarefa por (chatter + dia) — a versão marcada como
+      // feita ganha, se existir; senão a primeira. Isso corrige conjuntos
+      // inteiros que foram gerados de novo várias vezes no mesmo dia.
+      Object.keys(s.midnightTasks).forEach(dk=>{
+        const list=s.midnightTasks[dk];
+        if(!Array.isArray(list)||list.length<2)return;
+        const byChatter={};
+        list.forEach(t=>{
+          if(!t||!t.chatterId)return;
+          const existing=byChatter[t.chatterId];
+          if(!existing||(!existing.done&&t.done))byChatter[t.chatterId]=t;
+        });
+        s.midnightTasks[dk]=Object.values(byChatter);
+      });
+    }
+
     const cutoff=new Date();cutoff.setDate(cutoff.getDate()-60);
     const cutoffKey=fmt(cutoff);
     Object.values(s.chatterFichas||{}).forEach(f=>{
@@ -215,12 +249,19 @@ function mergeArraysSafe(local,remote){
   const locHasIds=loc.length&&loc[0]&&typeof loc[0]==='object'&&loc[0].id!=null;
   const remHasIds=rem.length&&rem[0]&&typeof rem[0]==='object'&&rem[0].id!=null;
   if(!locHasIds&&!remHasIds){
-    // Primitive arrays (strings/numbers, ex: lista de chatterIds em folga):
-    // nunca dropar um item que só existe local — faz união em vez de só
-    // confiar no remoto, senão uma marcação recente pode "desaparecer" se
-    // o snapshot do Firestore ainda não tinha alcançado essa mudança.
+    // Primitive arrays (strings/numbers, ex: lista de chatterIds em folga)
+    // OU arrays de objetos sem "id" (ex: histórico de turnos, cards do
+    // gerador): nunca dropar um item que só existe local — faz união em
+    // vez de só confiar no remoto. IMPORTANTE: pra objetos, "já existe"
+    // precisa comparar o CONTEÚDO (JSON.stringify), não a referência —
+    // comparar por referência (.includes de objeto) nunca bate depois de
+    // um JSON.parse, e isso fazia cada item se duplicar a cada sincronização.
+    const seen=new Set(loc.map(v=>typeof v==='object'&&v!==null?JSON.stringify(v):v));
     const union=[...loc];
-    rem.forEach(v=>{if(!union.includes(v))union.push(v);});
+    rem.forEach(v=>{
+      const key=typeof v==='object'&&v!==null?JSON.stringify(v):v;
+      if(!seen.has(key)){seen.add(key);union.push(v);}
+    });
     return union;
   }
   const order=[];const map=new Map();
@@ -256,10 +297,22 @@ const SHARD_DOC_IDS={chatterFichas:'shard-fichas',revenues:'shard-revenues',chat
 const ALL_SYNC_DOC_IDS=[FIREBASE_DOC_ID,...SHARD_FIELDS.map(f=>SHARD_DOC_IDS[f])];
 let fbDocsSeen=new Set();
 function persistLocalCache(){
-  try{const p=JSON.stringify(S);localStorage.setItem(DB,p);localStorage.setItem('gestorpro_backup',p);}catch(e){
-    localSaveFailCount++;
-    console.error('Falha ao salvar localmente',e);
-    toast(`⚠️ Não foi possível salvar localmente (${e.name||'erro'}) — verifique o espaço de armazenamento do navegador`,6000);
+  try{
+    const p=JSON.stringify(S);
+    localStorage.setItem(DB,p);
+    localStorage.setItem('gestorpro_backup',p);
+  }catch(e){
+    try{
+      localStorage.removeItem('gestorpro_backup');
+      localStorage.setItem(DB,JSON.stringify(S));
+    }catch(e2){
+      localSaveFailCount++;
+      console.error('Falha ao salvar localmente',e2);
+      if(Date.now()-lastLocalSaveWarningAt>30000){
+        lastLocalSaveWarningAt=Date.now();
+        toast(`⚠️ Sem espaço para salvar localmente (${e2.name||'erro'}) — seus dados continuam seguros no Firebase, mas libere espaço no navegador quando puder.`,6000);
+      }
+    }
   }
 }
 function scheduleRerenderAfterSync(){
@@ -303,6 +356,7 @@ function listenToFirestore(connectTimeout){
               } else {
                 // Shard: parsedPart já vem no formato {campo: valor} — funde só essa fatia
                 S=deepMergeState(S,parsedPart);delete S.payload;delete S.schemaVersion;delete S.updatedAt;
+                if(docId===SHARD_DOC_IDS.chatterFichas)pruneHeavyData(S); // dedupe/limpa aqui também, não só no load inicial
               }
               persistLocalCache();
               scheduleRerenderAfterSync();
@@ -321,7 +375,7 @@ function listenToFirestore(connectTimeout){
         const allSeen=fbDocsSeen.size>=ALL_SYNC_DOC_IDS.length;
         if(allSeen)fbHasReceivedFirstSnapshot=true;
         if(needsInitialPush&&allSeen)pushToFirestore();
-        else if(allSeen&&!wasAllSeenBefore)pushToFirestore(); // sincronização inicial completa agora — envia qualquer mudança que ficou represada esperando
+        else if(allSeen&&!wasAllSeenBefore){pruneHeavyData(S);pushToFirestore();} // sincronização inicial completa agora — limpa qualquer lixo que veio junto e envia a versão corrigida
         fbSyncStatus='online';
         updateSyncBadge();
         runAutoBackupIfNeeded();
@@ -407,7 +461,9 @@ function currentViewName(){
 }
 
 let localSaveFailCount=0;
+let lastLocalSaveWarningAt=0;
 function save(){
+  pruneHeavyData(S); // limpa/dedupe antes de salvar, pra nunca deixar duplicata ir pro Firebase
   try{
     const payload=JSON.stringify(S);
     localStorage.setItem(DB,payload);
@@ -416,12 +472,23 @@ function save(){
     localStorage.setItem('gestorpro_backup_ts',Date.now().toString());
     localSaveFailCount=0;
   }catch(e){
-    localSaveFailCount++;
-    console.error('Falha ao salvar localmente',e);
-    // Nunca falha em silêncio: avisa o usuário que o cache local não gravou.
-    // O Firestore (abaixo) é a rede de segurança nesse caso — se ele também
-    // falhar, o badge de sincronização já mostra isso separadamente.
-    toast(`⚠️ Não foi possível salvar localmente (${e.name||'erro'}) — verifique o espaço de armazenamento do navegador`,6000);
+    // Sem espaço? Libera a cópia duplicada de backup primeiro e tenta
+    // salvar só a principal — melhor ter uma cópia local que nenhuma.
+    try{
+      localStorage.removeItem('gestorpro_backup');
+      const payload=JSON.stringify(S);
+      localStorage.setItem(DB,payload);
+      localSaveFailCount=0;
+    }catch(e2){
+      localSaveFailCount++;
+      console.error('Falha ao salvar localmente',e2);
+      // Nunca falha em silêncio, mas avisa no máximo 1x a cada 30s — senão
+      // o aviso repete a cada ação e trava a tela na prática.
+      if(Date.now()-lastLocalSaveWarningAt>30000){
+        lastLocalSaveWarningAt=Date.now();
+        toast(`⚠️ Sem espaço para salvar localmente (${e2.name||'erro'}) — seus dados continuam seguros no Firebase, mas libere espaço no navegador quando puder.`,6000);
+      }
+    }
   }
   fbIgnoreSnapshotsUntil=Date.now()+3000;
   clearTimeout(fbSaveTimer);
@@ -4448,9 +4515,15 @@ function saveFichaBool(chatterId,store,key,value){
 function saveFichaSnapshot(chatterId){
   saveFicha(chatterId);
   const f=S.chatterFichas[chatterId];
-  const snap={date:todayKey(),tech:{...f.tech},behavior:{...f.behavior},potential:{...f.potential},risk:{...f.risk}};
+  const today=todayKey();
+  const snap={date:today,tech:{...f.tech},behavior:{...f.behavior},potential:{...f.potential},risk:{...f.risk}};
   if(!f.history)f.history=[];
-  f.history.push(snap);
+  // Nunca duplica: se já existe um snapshot de hoje, substitui em vez de
+  // adicionar outro — clicar "salvar" várias vezes no mesmo dia não deve
+  // acumular cópias idênticas.
+  const idx=f.history.findIndex(h=>h&&h.date===today);
+  if(idx!==-1)f.history[idx]=snap;
+  else f.history.push(snap);
   save();renderFichaChatter(chatterId);toast('✅ Snapshot salvo!');
 }
 
@@ -4746,6 +4819,11 @@ document.querySelectorAll('.chip').forEach(chip=>chip.addEventListener('click',(
 
 // ---------- INIT ----------
 load();
+// Limpa duplicatas/lixo acumulado e salva uma vez logo na abertura do app —
+// não espera nenhuma ação do usuário, pra nunca depender de "clicar em algo"
+// pra corrigir o documento.
+pruneHeavyData(S);
+save();
 initFirebaseWithRetry();
 document.getElementById('abs-date').value=todayKey();
 
@@ -5364,6 +5442,7 @@ function getFichaAndDiagnosisInsights(chatterId){
   const insights=[];
   const f=S.chatterFichas[chatterId];
   if(f){
+    if(f.evolucaoNotes)insights.push(`Observação do gestor: ${f.evolucaoNotes}`);
     if(f.risk?.riscos)insights.push(`Risco observado na ficha: ${f.risk.riscos}`);
     if(f.potential?.proximos)insights.push(`Próximo passo (ficha): ${f.potential.proximos}`);
     else if(f.tech?.evolucao)insights.push(`Evolução observada na ficha: ${f.tech.evolucao}`);
@@ -5459,6 +5538,7 @@ function suggestTrainingText(chatterId){
       <div style="background:var(--bg-soft);border-radius:8px;padding:10px">
         <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">💡 ONDE MELHORAR</div>
         ${recs.map(r=>`<div style="font-size:12.5px;color:var(--text);padding:3px 0;border-bottom:1px solid var(--line)">• ${r}</div>`).join('')}
+        <textarea class="ftext" style="min-height:44px;font-size:12.5px;background:#fff;margin-top:8px" placeholder="Adicione ou corrija algo sobre ${c.name}..." onblur="saveEvolucaoNote('${c.id}',this.value)">${S.chatterFichas[c.id]?.evolucaoNotes||''}</textarea>
       </div>
       ${(()=>{
         // Diagnostic square — latest ChatLab analysis
@@ -5963,6 +6043,11 @@ async function rodarChatLab(){
    =========================================================== */
 function saveChatterTraining(cid,val){
   S.chatterTraining[cid]=val;
+  save();
+}
+function saveEvolucaoNote(cid,val){
+  if(!S.chatterFichas[cid])S.chatterFichas[cid]={tech:{},behavior:{},potential:{},risk:{},history:[],analytics:{}};
+  S.chatterFichas[cid].evolucaoNotes=val;
   save();
 }
 function sendTrainingToWeek(cid){
