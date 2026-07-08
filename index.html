@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#FFFFFF">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
 <title>GestorPro</title>
 <style>
 /* ============================================================
@@ -364,6 +364,7 @@ body{
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
       <span class="pill pill-flat" id="sync-badge" style="font-size:9.5px">💾 local</span>
+      <span style="font-size:8px;color:var(--text3)">build:20260708c</span>
       <button onclick="exportBackup()" title="Exportar backup" style="background:none;border:none;cursor:pointer;font-size:14px;padding:2px 4px;opacity:.6" title="Exportar backup JSON">⬇️</button>
       <button onclick="importBackup()" title="Importar backup" style="background:none;border:none;cursor:pointer;font-size:14px;padding:2px 4px;opacity:.6" title="Restaurar backup JSON">⬆️</button>
       <div class="topclock" id="hd-clock">00:00</div>
@@ -395,10 +396,14 @@ body{
 <!-- ===================== PAINEL (HOME) ===================== -->
 <section class="view active" id="v-home">
   <div class="eyebrow">status ao vivo</div>
-  <div class="view-title">Painel</div>
 
   <!-- ESCRITÓRIO + PRÓXIMO TURNO -->
   <div class="panel" id="home-escritorio"></div>
+
+  <!-- JANELAS DISPONÍVEIS NA SEMANA -->
+  <div class="panel" id="home-availwindows-panel" style="display:none">
+    <div id="home-availwindows-content"></div>
+  </div>
 
   <!-- ALERTAS URGENTES -->
   <div class="panel" id="home-urgent-panel" style="display:none;border-color:var(--bad)">
@@ -420,12 +425,6 @@ body{
 
   <!-- WATCH -->
   <div id="home-watch-wrap"></div>
-
-  <!-- JANELA DE TURNOS -->
-  <div class="panel" id="home-janela-panel" style="display:none">
-    <div class="panel-head"><div><div class="panel-title">⚠️ Janela sem cobertura</div><div class="panel-note">Turnos sem chatter escalado</div></div></div>
-    <div id="home-janela-list"></div>
-  </div>
 
   <!-- MOTIVACIONAL -->
   <div class="panel" id="home-motiv-panel">
@@ -662,21 +661,9 @@ body{
     <div id="rpt-performance"></div>
   </div>
 
-  <!-- Seção 3: Chatters em Teste — semi-automático -->
-  <div class="panel" id="rpt-teste-panel">
-    <div class="panel-head"><div class="panel-title">3. Chatters em Teste</div><span class="pill pill-ok" style="font-size:10px">automático</span></div>
-    <div id="rpt-teste"></div>
-  </div>
-
-  <!-- Seção 4: Evolução dos Novos — automático -->
-  <div class="panel">
-    <div class="panel-head"><div class="panel-title">4. Evolução dos Novos</div><span class="pill pill-ok" style="font-size:10px">automático</span></div>
-    <div id="rpt-evolucao"></div>
-  </div>
-
   <!-- Seção 5: Seus erros — manual -->
   <div class="panel">
-    <div class="panel-head"><div class="panel-title">5. Seus Principais Erros da Semana</div><span class="pill pill-flat" style="font-size:10px">manual</span></div>
+    <div class="panel-head"><div class="panel-title">3. Seus Principais Erros da Semana</div><span class="pill pill-ok" style="font-size:10px">sugestão automática</span></div>
     <div class="field"><label class="flabel">Erro 1</label><input class="finput" id="rpt-erro1" placeholder="Descreva o erro..."></div>
     <div class="field"><label class="flabel">Erro 2</label><input class="finput" id="rpt-erro2" placeholder="Descreva o erro..."></div>
     <div class="field"><label class="flabel">Erro 3</label><input class="finput" id="rpt-erro3" placeholder="Descreva o erro..."></div>
@@ -684,21 +671,21 @@ body{
 
   <!-- Seção 6: Ações realizadas — semi-automático -->
   <div class="panel">
-    <div class="panel-head"><div class="panel-title">6. Ações Realizadas</div><span class="pill pill-ok" style="font-size:10px">automático</span></div>
+    <div class="panel-head"><div class="panel-title">4. Ações Realizadas</div><span class="pill pill-ok" style="font-size:10px">automático</span></div>
     <div id="rpt-acoes"></div>
     <div class="field" style="margin-top:10px"><label class="flabel">Ajustes na operação</label><input class="finput" id="rpt-ajustes" placeholder="Ex: mudei horário do turno da tarde..."></div>
   </div>
 
   <!-- Seção 7: Problemas — manual -->
   <div class="panel">
-    <div class="panel-head"><div class="panel-title">7. Problemas Encontrados</div><span class="pill pill-flat" style="font-size:10px">manual</span></div>
+    <div class="panel-head"><div class="panel-title">5. Problemas Encontrados</div><span class="pill pill-ok" style="font-size:10px">sugestão automática</span></div>
     <div class="field"><label class="flabel">Problema 1</label><input class="finput" id="rpt-prob1" placeholder="Descreva o problema..."></div>
     <div class="field"><label class="flabel">Problema 2</label><input class="finput" id="rpt-prob2" placeholder="Descreva o problema..."></div>
   </div>
 
   <!-- Seção 8: Plano próxima semana — manual -->
   <div class="panel">
-    <div class="panel-head"><div class="panel-title">8. Plano para Próxima Semana</div><span class="pill pill-flat" style="font-size:10px">manual</span></div>
+    <div class="panel-head"><div class="panel-title">6. Plano para Próxima Semana</div><span class="pill pill-flat" style="font-size:10px">manual</span></div>
     <div class="field"><label class="flabel">Ação 1</label><input class="finput" id="rpt-plano1" placeholder="Ex: focar em chatter X..."></div>
     <div class="field"><label class="flabel">Ação 2</label><input class="finput" id="rpt-plano2" placeholder=""></div>
     <div class="field"><label class="flabel">Ação 3</label><input class="finput" id="rpt-plano3" placeholder=""></div>
@@ -787,14 +774,6 @@ body{
 
     <div class="panel">
       <div class="panel-head">
-        <div><div class="panel-title">🌐 Time externo</div><div class="panel-note">Nome, modelo e horários — vendas excluídas dos seus relatórios</div></div>
-        <button class="btn btn-ghost btn-xs" onclick="gerAddExt()">+ chatter</button>
-      </div>
-      <div id="ger-ext-cards"></div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head">
         <div><div class="panel-title">⭐ Time Elite</div><div class="panel-note">Cole nome, modelo e vendas brutas — comissões são subtraídas do time básico</div></div>
         <button class="btn btn-ghost btn-xs" onclick="gerAddElite()">+ chatter</button>
       </div>
@@ -816,6 +795,7 @@ body{
       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" onclick="gerCopyEditor()">📋 Copiar</button>
         <button class="btn btn-primary btn-sm" onclick="gerProcessarEditor()">→ Processar no faturamento</button>
+        <button class="btn btn-soft btn-sm" style="color:var(--info);border-color:var(--info)" onclick="gerProcessarEditorAsExtra()" title="Envia todo o valor direto para Hora Extra — não conta como meta">⚡ → Hora Extra</button>
       </div>
     </div>
   </div>
@@ -827,8 +807,9 @@ body{
         <div><div class="panel-title">📨 Colar e processar relatórios</div><div class="panel-note">Cole todos juntos — o app extrai os dados</div></div>
       </div>
       <textarea class="ftext" id="teamreport-input" style="min-height:180px;font-family:var(--font-mono);font-size:12px" placeholder="Cole aqui os relatórios...&#10;&#10;Data: 01/07/2026&#10;Nome: Luiz Emanuel&#10;MOMOI PRIVACY FREE&#10;..."></textarea>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="btn btn-primary btn-block" onclick="parseTeamReports()">📊 Processar</button>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn btn-primary" style="flex:2" onclick="parseTeamReports()">📊 Processar</button>
+        <button class="btn btn-soft" style="flex:1;color:var(--info);border-color:var(--info)" onclick="parseTeamReportsAsExtra()" title="Envia todo o valor processado direto para Hora Extra — não conta como meta">⚡ Hora Extra</button>
         <button class="btn btn-ghost btn-xs" onclick="document.getElementById('teamreport-input').value='';document.getElementById('teamreport-results').innerHTML=''">✕</button>
       </div>
     </div>
@@ -954,6 +935,7 @@ body{
   <div class="eyebrow">acompanhamento</div>
   <div class="view-title">Fichas dos Chatters</div>
   <div class="view-sub">Atualização semanal · histórico cronológico</div>
+  <div class="week-nav" id="week-nav-fichas" style="margin-bottom:10px"></div>
   <div style="margin-bottom:12px">
     <select class="fselect" id="ficha-chatter-select" onchange="renderFichaChatter(this.value)"></select>
   </div>
@@ -1048,44 +1030,6 @@ body{
 
   <!-- CHATTERS -->
   <div id="pagpane-chatters">
-    <div class="panel">
-      <div class="panel-head"><div class="panel-title">⚙️ Configurar semana</div></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div class="field" style="margin:0">
-          <label class="flabel">Medalha do chatter</label>
-          <select class="fselect" id="pag-medalha" onchange="renderPagPreview()">
-            <option value="0">Sem medalha (4%)</option>
-            <option value="1">Bronze (4%)</option>
-            <option value="2">Prata (4.5%)</option>
-            <option value="3">Ouro (5%)</option>
-            <option value="4">Diamante (6%)</option>
-          </select>
-        </div>
-        <div class="field" style="margin:0">
-          <label class="flabel">Categoria semanal</label>
-          <select class="fselect" id="pag-cat" onchange="renderPagPreview()">
-            <option value="A">A — meta R$2.500–3.500</option>
-            <option value="B">B — meta R$3.500–5.000</option>
-            <option value="C">C — meta R$5.000–7.000</option>
-            <option value="D">D — meta R$7.000–10.000</option>
-            <option value="E">E — meta R$10.000–14.000</option>
-          </select>
-        </div>
-      </div>
-      <div class="field" style="margin-top:10px">
-        <label class="flabel">Faturamento semanal simulado (R$)</label>
-        <input type="number" class="finput" id="pag-fat" placeholder="Ex: 5000" oninput="renderPagPreview()">
-      </div>
-      <div class="field">
-        <label class="flabel">Vendas high ticket (R$300+) — total de comissões nessas vendas</label>
-        <input type="number" class="finput" id="pag-ht" placeholder="Ex: 1500 (soma das vendas ≥R$300)" oninput="renderPagPreview()">
-      </div>
-      <div class="field">
-        <label class="flabel">Hora extra faturada (modelo extra)</label>
-        <input type="number" class="finput" id="pag-extra" placeholder="Ex: 800" oninput="renderPagPreview()">
-      </div>
-    </div>
-    <div id="pag-preview"></div>
     <div id="pag-chatters-all"></div>
     <div class="panel" style="margin-top:8px">
       <div class="panel-head"><div class="panel-title">📊 Tabela de metas — todas as categorias</div></div>
@@ -1109,17 +1053,8 @@ body{
   <!-- GERENTE -->
   <div id="pagpane-gerente" style="display:none">
     <div class="panel">
-      <div class="panel-head"><div class="panel-title">⚙️ Simulador da gerência</div></div>
-      <div class="panel-note" style="margin-bottom:12px">Configure a meta e o faturamento de cada chatter para calcular sua premiação</div>
-      <div class="field">
-        <label class="flabel">Meta global da operação (mês)</label>
-        <input type="number" class="finput" id="ger-meta-global" placeholder="Ex: 100000" oninput="renderGerPreview()">
-      </div>
-      <div class="field">
-        <label class="flabel">Faturamento real da operação (mês)</label>
-        <input type="number" class="finput" id="ger-fat-global" placeholder="Ex: 115000" oninput="renderGerPreview()">
-      </div>
-      <div id="ger-chatters-config"></div>
+      <div class="panel-head"><div class="panel-title">⚙️ Premiação da gerência</div></div>
+      <div class="panel-note" style="margin-bottom:12px">Meta e faturamento de cada chatter, e a meta/faturamento global do mês, são calculados automaticamente a partir da categoria escolhida em Faturamento e do resultado real de cada um.</div>
       <div id="ger-preview"></div>
     </div>
     <div class="panel">
@@ -1254,12 +1189,12 @@ body{
     <select class="fselect" id="ca-chatter"></select>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-    <div><label class="flabel">Conexão</label><select class="fselect" id="ca-conexao"><option value="">—</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
-    <div><label class="flabel">Condução</label><select class="fselect" id="ca-conducao"><option value="">—</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
-    <div><label class="flabel">Engajamento</label><select class="fselect" id="ca-engajamento"><option value="">—</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
-    <div><label class="flabel">Conversão</label><select class="fselect" id="ca-conversao"><option value="">—</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
-    <div><label class="flabel">Resposta</label><select class="fselect" id="ca-resposta"><option value="">—</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
-    <div><label class="flabel">Naturalidade</label><select class="fselect" id="ca-naturalidade"><option value="">—</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
+    <div><label class="flabel">Conexão</label><select class="fselect" id="ca-conexao"><option value="">—</option><option value="1">Fraco</option><option value="2">Regular</option><option value="3">Bom</option><option value="4">Ótimo</option><option value="5">Excelente</option></select></div>
+    <div><label class="flabel">Condução</label><select class="fselect" id="ca-conducao"><option value="">—</option><option value="1">Fraco</option><option value="2">Regular</option><option value="3">Bom</option><option value="4">Ótimo</option><option value="5">Excelente</option></select></div>
+    <div><label class="flabel">Engajamento</label><select class="fselect" id="ca-engajamento"><option value="">—</option><option value="1">Fraco</option><option value="2">Regular</option><option value="3">Bom</option><option value="4">Ótimo</option><option value="5">Excelente</option></select></div>
+    <div><label class="flabel">Conversão</label><select class="fselect" id="ca-conversao"><option value="">—</option><option value="1">Fraco</option><option value="2">Regular</option><option value="3">Bom</option><option value="4">Ótimo</option><option value="5">Excelente</option></select></div>
+    <div><label class="flabel">Resposta</label><select class="fselect" id="ca-resposta"><option value="">—</option><option value="1">Fraco</option><option value="2">Regular</option><option value="3">Bom</option><option value="4">Ótimo</option><option value="5">Excelente</option></select></div>
+    <div><label class="flabel">Naturalidade</label><select class="fselect" id="ca-naturalidade"><option value="">—</option><option value="1">Fraco</option><option value="2">Regular</option><option value="3">Bom</option><option value="4">Ótimo</option><option value="5">Excelente</option></select></div>
   </div>
   <div class="field"><label class="flabel">Pontos fortes</label><textarea class="ftext" id="ca-fortes" placeholder="O que foi bem..." style="min-height:60px"></textarea></div>
   <div class="field"><label class="flabel">Pontos fracos</label><textarea class="ftext" id="ca-fracos" placeholder="O que melhorar..." style="min-height:60px"></textarea></div>
